@@ -14,7 +14,7 @@ won't start.
 It never writes to the car.
 
 > **Status: data source checked on one car; package not yet run on a car.**
-> Probe on a US Ioniq 5 (firmware build 20260507), car on and parked:
+> Probe on a **2023 Ioniq 5 XEL (US), head-unit firmware 260507**, car on and parked:
 >
 > | txn | getter | reply | meaning |
 > |---|---|---|---|
