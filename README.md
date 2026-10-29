@@ -76,10 +76,19 @@ Extract `dist/gen5w-BatteryWatchdog-USB.zip` to a FAT32/exFAT USB root and inser
 
 ## 3. Use
 
-The **Battery Watchdog** app shows the latest reading, any active warning, a chart
-of recent samples (dots = start of a drive), and a **Read sensor now** button
-that prints the raw `getBatSoc` reply. That button is handy for re-checking the
-decode. Settings take effect on the next start.
+The **Battery Watchdog** app is laid out for the 1920×720 Gen5W screen, in
+three columns with no page scrolling:
+
+- **Left:** the latest 12V % (green, or amber below the warning level), the
+  current warning, HV SOH, and **Read sensor now**, which shows the live
+  `getBatSoc` value and its raw reply.
+- **Middle:** a full-height chart of recent samples. Dots mark the start of
+  each drive, and the amber line is the warning level.
+- **Right:** warning settings. Sampling interval, decode, scale and **Clear
+  history** sit under **Advanced**.
+
+The screen refreshes every 30 s while it's open. Settings take effect on the
+next start of the car.
 
 State lives in `/data/nemesis/state/battery.watchdog/`:
 

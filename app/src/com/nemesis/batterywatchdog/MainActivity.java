@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -33,87 +34,118 @@ public class MainActivity extends Activity {
     static final String NEM = "/system/xbin/nemesis";
     static final String[] DECODE = { "Auto", "Integer", "Float" };
     static final int[] INTERVALS = { 60, 300, 900 };
+    static final int BG = Color.rgb(18, 20, 24), AMBER = Color.rgb(255, 170, 60),
+            GREEN = Color.rgb(110, 210, 140), MUTED = Color.rgb(150, 160, 170), ACCENT = Color.rgb(120, 180, 255);
 
-    boolean enabled = true, toastStart = false;
+    boolean enabled = true, toastStart = false, advanced = false;
     int warnPct = 60, dropPct = 15, decode = 1, scaleX10 = 10, interval = 300;
 
-    TextView bigLabel, infoLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
-    Button enBtn, toastBtn, decBtn, scaleBtn, intBtn;
+    TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
+    Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
+    LinearLayout advBox;
     Chart chart;
 
+    // auto-refresh while the screen is open (the service samples every few minutes)
+    final Handler handler = new Handler();
+    final Runnable tick = new Runnable() {
+        public void run() { refreshData(); handler.postDelayed(this, 30000); }
+    };
+
+    /*
+     * Layout for the 1920x720 Gen5W screen: three columns, no page scrolling.
+     *   left  (3) : live 12V reading, warning, SOH, read-sensor button
+     *   middle(5) : chart, full height
+     *   right (3) : settings (scrolls on its own if it ever overflows)
+     */
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         loadConfig();
 
-        ScrollView sv = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(20);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setBackgroundColor(BG);
+        int pad = dp(16);
         root.setPadding(pad, pad, pad, pad);
-        root.setBackgroundColor(Color.rgb(18, 20, 24));
-        sv.addView(root);
 
-        root.addView(title("Battery Watchdog"));
-
+        // ---- left: status --------------------------------------------------
+        LinearLayout left = column();
+        left.addView(title("Battery Watchdog"));
+        left.addView(hint("12V battery"));
         bigLabel = new TextView(this);
         bigLabel.setTextColor(Color.WHITE);
-        bigLabel.setTextSize(44);
-        root.addView(bigLabel);
-        infoLabel = hint("");
-        root.addView(infoLabel);
+        bigLabel.setTextSize(64);
+        left.addView(bigLabel);
+        updLabel = hint("");
+        left.addView(updLabel);
         warnLabel = new TextView(this);
-        warnLabel.setTextColor(Color.rgb(255, 170, 60));
-        warnLabel.setTextSize(15);
-        root.addView(warnLabel);
-
-        root.addView(section("Recent readings (start of each drive = dot)"));
-        chart = new Chart(this);
-        root.addView(chart, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
-
-        LinearLayout row = hrow();
-        row.addView(button("Refresh", new View.OnClickListener() { public void onClick(View v) { refreshData(); } }));
-        row.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
-        root.addView(row);
+        warnLabel.setTextColor(AMBER);
+        warnLabel.setTextSize(18);
+        warnLabel.setPadding(0, dp(6), 0, dp(10));
+        left.addView(warnLabel);
+        sohLabel = hint("");
+        left.addView(sohLabel);
+        left.addView(spacer());
+        left.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
         rawLabel = hint("");
-        root.addView(rawLabel);
+        left.addView(rawLabel);
 
-        root.addView(section("Warnings"));
+        // ---- middle: chart -------------------------------------------------
+        LinearLayout mid = column();
+        mid.setPadding(dp(16), 0, dp(16), 0);
+        mid.addView(section("Recent readings · dot = start of a drive"));
+        chart = new Chart(this, dp(1));
+        mid.addView(chart, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // ---- right: settings -----------------------------------------------
+        ScrollView rightScroll = new ScrollView(this);
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        rightScroll.addView(right);
+
+        right.addView(section("Warnings"));
         enBtn = button("", new View.OnClickListener() { public void onClick(View v) { enabled = !enabled; refreshButtons(); } });
-        root.addView(enBtn);
-
+        right.addView(enBtn);
         warnThrLabel = label();
-        root.addView(warnThrLabel);
-        root.addView(seek(30, 90, warnPct, new Setter() { public void set(int v) { warnPct = v; refreshButtons(); } }));
-
+        right.addView(warnThrLabel);
+        right.addView(seek(30, 90, warnPct, new Setter() { public void set(int v) { warnPct = v; refreshButtons(); } }));
         dropThrLabel = label();
-        root.addView(dropThrLabel);
-        root.addView(seek(5, 40, dropPct, new Setter() { public void set(int v) { dropPct = v; refreshButtons(); } }));
-
+        right.addView(dropThrLabel);
+        right.addView(seek(5, 40, dropPct, new Setter() { public void set(int v) { dropPct = v; refreshButtons(); } }));
         toastBtn = button("", new View.OnClickListener() { public void onClick(View v) { toastStart = !toastStart; refreshButtons(); } });
-        root.addView(toastBtn);
+        right.addView(toastBtn);
 
-        root.addView(section("Sampling / decoding (set from the probe results)"));
+        advBtn = button("", new View.OnClickListener() { public void onClick(View v) { advanced = !advanced; refreshButtons(); } });
+        right.addView(advBtn);
+        advBox = new LinearLayout(this);
+        advBox.setOrientation(LinearLayout.VERTICAL);
         intBtn = button("", new View.OnClickListener() { public void onClick(View v) {
             int i = 0; while (i < INTERVALS.length && INTERVALS[i] != interval) i++;
             interval = INTERVALS[(i + 1) % INTERVALS.length]; refreshButtons(); } });
-        root.addView(intBtn);
+        advBox.addView(intBtn);
         decBtn = button("", new View.OnClickListener() { public void onClick(View v) { decode = (decode + 1) % 3; refreshButtons(); } });
-        root.addView(decBtn);
+        advBox.addView(decBtn);
         scaleBtn = button("", new View.OnClickListener() { public void onClick(View v) { scaleX10 = scaleX10 == 10 ? 5 : 10; refreshButtons(); } });
-        root.addView(scaleBtn);
+        advBox.addView(scaleBtn);
+        advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
+        right.addView(advBox);
 
-        root.addView(gap());
-        LinearLayout row2 = hrow();
-        row2.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
-        row2.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
-        root.addView(row2);
-        root.addView(hint("Settings take effect on the next start of the car."));
+        right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
+        right.addView(hint("Applies on the next start of the car."));
 
-        setContentView(sv);
+        root.addView(left, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
+        root.addView(mid, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
+        root.addView(rightScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
+
+        setContentView(root);
         refreshButtons();
-        refreshData();
     }
+
+    @Override
+    protected void onResume() { super.onResume(); handler.removeCallbacks(tick); tick.run(); }
+
+    @Override
+    protected void onPause() { super.onPause(); handler.removeCallbacks(tick); }
 
     // ---- data ---------------------------------------------------------------
     void refreshData() {
@@ -121,16 +153,20 @@ public class MainActivity extends Activity {
         String state = kv(status, "state"), pct = kv(status, "pct10"), soh = kv(status, "soh_raw");
         String upd = kv(status, "updated"), warn = kv(status, "warn");
         int p = parse(pct, -1);
-        if ("disabled".equals(state)) bigLabel.setText("Monitor off");
-        else if (p >= 0) bigLabel.setText(fmt10(p) + " %");
+        bigLabel.setTextColor(Color.WHITE);
+        if ("disabled".equals(state)) bigLabel.setText("Off");
+        else if (p >= 0) {
+            bigLabel.setText(fmt10(p) + "%");
+            bigLabel.setTextColor(p < warnPct * 10 ? AMBER : GREEN);
+        }
         else if (state.length() == 0) bigLabel.setText("No data yet");
         else bigLabel.setText("No reading");
-        StringBuilder info = new StringBuilder();
-        if (upd.length() > 0) info.append("Updated ").append(time(parse(upd, 0))).append("   ");
-        if (soh.length() > 0) info.append("HV battery SOH (raw) ").append(soh);
-        if ("no_reading".equals(state)) info.append("\nThe 12V value couldn't be decoded. Run the probe and check the decode settings.");
-        infoLabel.setText(info.toString());
-        warnLabel.setText(warn.length() > 0 ? "⚠ " + warn : "");
+        updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0)) : "");
+        String sohText = soh.length() > 0 ? "HV battery health (SOH): " + soh : "";
+        if ("no_reading".equals(state)) sohText += "\nThe 12V value couldn't be decoded. Check Advanced settings.";
+        sohLabel.setText(sohText);
+        warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "No warnings");
+        warnLabel.setTextColor(warn.length() > 0 ? AMBER : MUTED);
 
         // last ~300 log rows: epoch,event,raw,pct10,soh
         String log = runRoot("cat " + STATE + "/log.csv 2>/dev/null");
@@ -148,7 +184,15 @@ public class MainActivity extends Activity {
 
     void readNow() {
         String r = runRoot("service call tm_hscan_service 137").trim();
-        rawLabel.setText("getBatSoc (0x89) → " + r);
+        String shown = r;
+        int i = r.indexOf("Parcel(");
+        if (i >= 0) {
+            String[] w = r.substring(i + 7).trim().split("\\s+");
+            if (w.length >= 2 && "00000000".equals(w[0])) {
+                try { shown = "Sensor now: " + Long.parseLong(w[1], 16) + "%   (raw " + w[1] + ")"; } catch (Exception e) { }
+            }
+        }
+        rawLabel.setText(shown);
     }
 
     void clearHistory() {
@@ -201,12 +245,14 @@ public class MainActivity extends Activity {
     }
 
     void refreshButtons() {
-        enBtn.setText(enabled ? "Monitor: ON" : "Monitor: OFF");
-        warnThrLabel.setText("Warn when 12V is below " + warnPct + " %");
-        dropThrLabel.setText("Warn when it drops " + dropPct + "+ points while parked");
-        toastBtn.setText(toastStart ? "Show reading every start: YES" : "Show reading every start: NO (warnings only)");
+        enBtn.setText(enabled ? "Monitor: on" : "Monitor: off");
+        warnThrLabel.setText("Warn below " + warnPct + "%");
+        dropThrLabel.setText("Warn if it drops " + dropPct + "+ pts while parked");
+        toastBtn.setText(toastStart ? "Pop-up every start: on" : "Pop-up every start: warnings only");
         intBtn.setText("Sample every " + (interval / 60) + " min");
-        decBtn.setText("Decode value as: " + DECODE[decode]);
+        advBtn.setText(advanced ? "Advanced \u25B4" : "Advanced \u25BE");
+        advBox.setVisibility(advanced ? View.VISIBLE : View.GONE);
+        decBtn.setText("Decode as: " + DECODE[decode]);
         scaleBtn.setText("Scale: " + (scaleX10 == 10 ? "1 raw = 1 %" : "1 raw = 0.5 %"));
     }
 
@@ -214,39 +260,45 @@ public class MainActivity extends Activity {
     static class Chart extends View {
         List<long[]> pts = new ArrayList<long[]>();
         int warn10 = 600;
+        final float d;
         final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG), dot = new Paint(Paint.ANTI_ALIAS_FLAG),
                 grid = new Paint(), warnP = new Paint(), text = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        Chart(Context c) {
+        Chart(Context c, float density) {
             super(c);
-            line.setColor(Color.rgb(120, 180, 255)); line.setStrokeWidth(3);
+            d = density;
+            line.setColor(ACCENT); line.setStrokeWidth(3 * d);
             dot.setColor(Color.WHITE);
-            grid.setColor(Color.rgb(50, 55, 62));
-            warnP.setColor(Color.rgb(255, 170, 60)); warnP.setStrokeWidth(2);
-            text.setColor(Color.rgb(150, 160, 170)); text.setTextSize(22);
+            grid.setColor(Color.rgb(50, 55, 62)); grid.setStrokeWidth(d);
+            warnP.setColor(AMBER); warnP.setStrokeWidth(2 * d);
+            text.setColor(MUTED); text.setTextSize(14 * d);
         }
 
         void setData(List<long[]> p, int w) { pts = p; warn10 = w; invalidate(); }
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), left = 60, top = 10, bottom = h - 10;
-            for (int pct = 0; pct <= 100; pct += 25) {
-                float y = bottom - (bottom - top) * pct / 100f;
+            float w = getWidth(), h = getHeight(), left = 44 * d, top = 10 * d, bottom = h - 10 * d;
+            // y range: 30-100 % (a healthy 12V lives up there); drop the floor if data goes lower
+            int lo = 30;
+            for (long[] p : pts) while (p[1] < lo * 10 && lo > 0) lo -= 10;
+            float span = 100 - lo;
+            for (int pct = lo; pct <= 100; pct += 10) {
+                float y = bottom - (bottom - top) * (pct - lo) / span;
                 c.drawLine(left, y, w, y, grid);
-                c.drawText(pct + "%", 0, y + 8, text);
+                if ((pct - lo) % 20 == 0 || pct == 100) c.drawText(pct + "%", 0, y + 5 * d, text);
             }
-            float wy = bottom - (bottom - top) * warn10 / 1000f;
+            float wy = bottom - (bottom - top) * (warn10 / 10f - lo) / span;
             c.drawLine(left, wy, w, wy, warnP);
-            if (pts.size() < 2) { c.drawText("Not enough data yet", left + 20, h / 2, text); return; }
-            // x = sample index (sessions are far apart in time, so time scaling hides detail)
-            float step = (w - left - 10) / (pts.size() - 1);
+            if (pts.size() < 2) { c.drawText("Not enough data yet. Readings appear after a drive or two.", left + 12 * d, h / 2, text); return; }
+            // x = sample index (drives are far apart in time, so time scaling hides detail)
+            float step = (w - left - 10 * d) / (pts.size() - 1);
             float px = 0, py = 0;
             for (int i = 0; i < pts.size(); i++) {
                 long[] p = pts.get(i);
-                float x = left + i * step, y = bottom - (bottom - top) * p[1] / 1000f;
+                float x = left + i * step, y = bottom - (bottom - top) * (p[1] / 10f - lo) / span;
                 if (i > 0 && p[2] == 0) c.drawLine(px, py, x, y, line);   // break the line at each new drive
-                if (p[2] == 1) c.drawCircle(x, y, 6, dot);
+                if (p[2] == 1) c.drawCircle(x, y, 5 * d, dot);
                 px = x; py = y;
             }
         }
@@ -280,9 +332,12 @@ public class MainActivity extends Activity {
         });
         return sb;
     }
-    Button button(String s, View.OnClickListener l) { Button b = new Button(this); b.setText(s); b.setOnClickListener(l); return b; }
-    LinearLayout hrow() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
-    TextView label() { TextView t = new TextView(this); t.setTextColor(Color.WHITE); t.setTextSize(17); return t; }
+    Button button(String s, View.OnClickListener l) {
+        Button b = new Button(this); b.setText(s); b.setTextSize(17); b.setMinHeight(dp(56)); b.setOnClickListener(l); return b;
+    }
+    LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
+    View spacer() { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(1, 0, 1f)); return v; }
+    TextView label() { TextView t = new TextView(this); t.setTextColor(Color.WHITE); t.setTextSize(17); t.setPadding(0, dp(10), 0, 0); return t; }
     TextView title(String s) {
         TextView t = new TextView(this);
         t.setText(s); t.setTextColor(Color.WHITE); t.setTextSize(26);
@@ -290,13 +345,12 @@ public class MainActivity extends Activity {
     }
     TextView section(String s) {
         TextView t = new TextView(this);
-        t.setText(s); t.setTextColor(Color.rgb(120, 180, 255)); t.setTextSize(16);
+        t.setText(s); t.setTextColor(ACCENT); t.setTextSize(17);
         t.setPadding(0, dp(14), 0, dp(4)); return t;
     }
     TextView hint(String s) {
         TextView t = new TextView(this);
-        t.setText(s); t.setTextColor(Color.rgb(150, 160, 170)); t.setTextSize(13);
+        t.setText(s); t.setTextColor(MUTED); t.setTextSize(15);
         t.setPadding(0, 0, 0, dp(8)); return t;
     }
-    View gap() { View v = new View(this); v.setMinimumHeight(dp(10)); return v; }
 }
