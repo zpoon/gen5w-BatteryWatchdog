@@ -13,10 +13,20 @@ won't start.
 **Read-only.** The service only calls getters on the telematics hscan service.
 It never writes to the car.
 
-> **Status: scaffold, unverified.** The 12V source is
-> `service call tm_hscan_service 137` (0x89 `getBatSoc`). egmp-aa-ev-feat lists
-> it as "12 V SOC", but as a test still to run (P6), not a confirmed decode. Its
-> return type and scale are unknown. Run the probe first.
+> **Status: data source checked on one car; package not yet run on a car.**
+> Probe on a US Ioniq 5 (firmware build 20260507), car on and parked:
+>
+> | txn | getter | reply | meaning |
+> |---|---|---|---|
+> | 137 (0x89) | `getBatSoc` | int `0x53` = **83** | 12V SOC, 1 % per unit. Logcat: `TM_HSCANService engine : true/batSoc : 83` |
+> | 74 (0x4a) | `remainBatteryPercentage` | float `0x428d0000` = **70.5** | HV (traction) SOC, 0.5 % steps |
+> | 214 (0xd6) | SOH | int `0x64` = 100 | HV pack health index |
+> | 211 (0xd3) | BatPwrSum | 0 | not used |
+>
+> 137 is an **integer** and is clearly a different battery from the 70.5 % HV
+> SOC, so the defaults are now decode = Integer, scale = 1 %. Values were steady
+> over 3 minutes. That's normal for a battery-sensor SOC, but it means the
+> "should rise after start" check hasn't been seen yet.
 
 ## Layout
 

@@ -44,7 +44,7 @@ INTERVAL=$(cfg interval_s 300)
 SETTLE=$(cfg settle_s 30)
 WARN_PCT=$(cfg warn_pct 60)
 DROP_PCT=$(cfg drop_pct 15)
-DECODE=$(cfg decode 0)        # 0 auto, 1 int, 2 float
+DECODE=$(cfg decode 1)        # 0 auto, 1 int (probe-confirmed), 2 float
 SCALE=$(cfg scale_x10 10)     # % per raw unit, x10 (10 = 1 %, 5 = 0.5 %)
 TOAST_START=$(cfg toast_start 0)
 MAX_LINES=$(cfg max_lines 4000)

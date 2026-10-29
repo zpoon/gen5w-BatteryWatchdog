@@ -35,7 +35,7 @@ public class MainActivity extends Activity {
     static final int[] INTERVALS = { 60, 300, 900 };
 
     boolean enabled = true, toastStart = false;
-    int warnPct = 60, dropPct = 15, decode = 0, scaleX10 = 10, interval = 300;
+    int warnPct = 60, dropPct = 15, decode = 1, scaleX10 = 10, interval = 300;
 
     TextView bigLabel, infoLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
     Button enBtn, toastBtn, decBtn, scaleBtn, intBtn;
@@ -182,7 +182,7 @@ public class MainActivity extends Activity {
         toastStart = readInt("toast_start", 0) == 1;
         warnPct    = clamp(readInt("warn_pct", 60), 30, 90);
         dropPct    = clamp(readInt("drop_pct", 15), 5, 40);
-        decode     = clamp(readInt("decode", 0), 0, 2);
+        decode     = clamp(readInt("decode", 1), 0, 2);
         scaleX10   = readInt("scale_x10", 10) == 5 ? 5 : 10;
         interval   = readInt("interval_s", 300);
     }
