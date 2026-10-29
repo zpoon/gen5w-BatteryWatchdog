@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only used to attach files to a release on v* tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android build-tools 30.0.3 (last with dx) and platform 30
+        run: |
+          SDKM="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "build-tools;30.0.3" "platforms;android-30" > /dev/null
+
+      - name: Check shell scripts parse
+        run: |
+          for f in package/svc/*.sh package/scripts/*.sh research/probe-12v/NEMESIS.sh; do sh -n "$f"; done
+
+      - name: Build APK
+        env:
+          ANDROID_SDK: ${{ env.ANDROID_SDK_ROOT }}
+        run: tools/build_apk.sh
+
+      - name: Build NEMESIS package + USB bundle
+        run: |
+          cp app/batterywatchdog.apk package/app/batterywatchdog.apk
+          tools/make_package.sh
+
+      - name: Bundle the probe for USB
+        run: (cd research/probe-12v && zip -X ../../dist/probe-12v-USB.zip NEMESIS.data NEMESIS.sh)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gen5w-BatteryWatchdog-${{ github.sha }}
+          path: |
+            dist/gen5w-BatteryWatchdog-USB.zip
+            dist/battery.watchdog.zip
+            dist/probe-12v-USB.zip
+            app/batterywatchdog.apk
+
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip dist/probe-12v-USB.zip app/batterywatchdog.apk \
+          || gh release upload "$GITHUB_REF_NAME" --clobber \
+            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip dist/probe-12v-USB.zip app/batterywatchdog.apk

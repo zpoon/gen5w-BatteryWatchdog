@@ -64,6 +64,12 @@ once the probe shows which it is.
 
 ## 2. Build
 
+Every push to `main` is built by GitHub Actions (`.github/workflows/build.yml`)
+with the official Android SDK tools. Download the `gen5w-BatteryWatchdog-USB.zip`
+artifact from the run. Pushing a `v*` tag also attaches the files to a GitHub release.
+
+To build locally:
+
 Needs a JDK and an Android SDK with build-tools that still ship `dx` (e.g. 30.0.3).
 
 ```
