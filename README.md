@@ -1,0 +1,102 @@
+# 12V Battery Monitor (lvbatt.monitor) — NEMESIS package for Gen5W
+
+Logs the 12V battery's state of charge every time the car starts and every
+few minutes while it's on. It warns with the factory toast when:
+
+- the 12V is **below a threshold** at startup (default 60 %)
+- it **dropped a lot while parked** since the end of the last drive (default 15+ points)
+- it **didn't recover during the last drive** (a drive of 20+ min that ended lower than it started)
+
+The aim is to catch a weak 12V battery or a failing ICCU/LDC before the car
+won't start.
+
+**Read-only.** The service only calls getters on the telematics hscan service.
+It never writes to the car.
+
+> **Status: scaffold, unverified.** The 12V source is
+> `service call tm_hscan_service 137` (0x89 `getBatSoc`). egmp-aa-ev-feat lists
+> it as "12 V SOC", but as a test still to run (P6), not a confirmed decode. Its
+> return type and scale are unknown. Run the probe first.
+
+## Layout
+
+```
+research/probe-12v/     USB probe (type=execute): samples 0x89 / 0xd6 / 0x4a / 0xd3 for ~3 min
+package/                the NEMESIS package
+  NEMESIS.data          app + background service
+  svc/lvbatt.sh         the monitor service (root, read-only)
+  scripts/post.sh       seeds default settings
+  app/lvbatt.apk        (built, copy here)
+app/                    settings / history app (Java, no resources, built with dx)
+tools/build_apk.sh      javac -> dx (DEX 035) -> aapt -> v1 sign   (from hkmc-coldstart-heat)
+tools/make_package.sh   package zip + USB install bundle            (from hkmc-coldstart-heat)
+```
+
+## 1. Verify the data source (do this first)
+
+1. Copy `research/probe-12v/NEMESIS.data` and `NEMESIS.sh` to the root of a USB drive.
+2. Car on, parked: insert the drive and approve. Leave it plugged in ~3 minutes.
+3. Open `PROBE-12V.txt`. Each `txn 137:` line looks like `Result: Parcel(00000000 XXXXXXXX ...)`:
+   - `XXXXXXXX` is a small number (e.g. `0000005a` = 90): it's an **int**. If it
+     matches the 12V % you'd expect, set decode = Integer, scale = 1 %. If it's
+     about double that, use scale = 0.5 %.
+   - It starts with `42…` / `41…` (e.g. `42b40000` = 90.0): it's a **float**. Set decode = Float.
+   - It's `00000000` every time, or the first word isn't `00000000`: this
+     firmware doesn't fill it. Don't install; the monitor would have nothing to show.
+4. If you can, compare against a known 12V reading (OBD scanner / Car Scanner
+   app). The value should go **up a few points** in the minutes after the car
+   turns on (the LDC starts charging). That's a good sign it's the 12V and not
+   something else.
+
+"Auto" decode treats anything ≥ `0x30000000` as a float and anything smaller as
+an int. That works for both cases, but it's better to set the type explicitly
+once the probe shows which it is.
+
+## 2. Build
+
+Needs a JDK and an Android SDK with build-tools that still ship `dx` (e.g. 30.0.3).
+
+```
+ANDROID_SDK=~/Android/Sdk tools/build_apk.sh
+cp app/lvbatt.apk package/app/lvbatt.apk
+tools/make_package.sh
+```
+
+Extract `dist/lvbatt-monitor-USB.zip` to a FAT32/exFAT USB root and insert it in the car to install.
+
+## 3. Use
+
+The **12V Monitor** app shows the latest reading, any active warning, a chart
+of recent samples (dots = start of a drive), and a **Read sensor now** button
+that prints the raw `getBatSoc` reply. That button is handy for re-checking the
+decode. Settings take effect on the next start.
+
+State lives in `/data/nemesis/state/lvbatt.monitor/`:
+
+| file | contents |
+|---|---|
+| `log.csv` | `epoch,event(start/sample),raw_hex,pct10,soh_raw` — rotates to `log.old.csv` at `max_lines` |
+| `sessions` | one line per finished drive: `start_epoch minutes start_pct10 end_pct10` |
+| `warnings` | every warning raised, timestamped |
+| `status` | latest state for the app |
+| `sess_start`, `last` | start and most recent sample of the current session |
+
+`pct10` is tenths of a percent (`725` = 72.5 %).
+
+## Notes / limits
+
+- One head-unit boot = one session. The "end" of a drive is the last sample,
+  so it can be up to `interval_s` before you turned the car off.
+- The IBS (battery sensor) SOC estimate can jump after the car sleeps or
+  re-learns. Treat a single odd reading as noise and watch the trend.
+- SOH (`0xd6`) is the **HV pack's** health index, logged for reference only.
+- Desktop test of the service script with mocked `service`/`am`:
+  `LVB_TEST=1 LVB_TEST_PATH=<mock bin> LVB_STATE=<tmp dir> sh package/svc/lvbatt.sh`
+
+## Credits
+
+Build/packaging tools and the app's root-config pattern are adapted from
+[hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat) (MIT).
+The service names, transaction codes and toast broadcast come from
+[egmp-aa-ev-feat](https://github.com/willemcvu/egmp-aa-ev-feat).
+Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC.

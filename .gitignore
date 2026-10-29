@@ -1,0 +1,5 @@
+app/build/
+app/*.apk
+app/*.jks
+package/app/*.apk
+dist/
