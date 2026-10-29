@@ -1,6 +1,6 @@
 #!/system/bin/sh
 export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
-STATE=/data/nemesis/state/lvbatt.monitor
+STATE=/data/nemesis/state/battery.watchdog
 mkdir -p "$STATE" 2>/dev/null
 # seed defaults only if not already set (keeps settings + history on reinstall)
 [ -r "$STATE/enabled" ]     || echo 1   > "$STATE/enabled"
@@ -10,5 +10,5 @@ mkdir -p "$STATE" 2>/dev/null
 [ -r "$STATE/decode" ]      || echo 0   > "$STATE/decode"
 [ -r "$STATE/scale_x10" ]   || echo 10  > "$STATE/scale_x10"
 [ -r "$STATE/toast_start" ] || echo 0   > "$STATE/toast_start"
-echo "lvbatt.monitor installed (warn_pct=$(cat "$STATE/warn_pct" 2>/dev/null))"
+echo "battery.watchdog installed (warn_pct=$(cat "$STATE/warn_pct" 2>/dev/null))"
 exit 0

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build + sign the 12V Monitor APK (com.nemesis.lvbatt).
+# Build + sign the Battery Watchdog APK (com.nemesis.batterywatchdog).
 #
 # Requirements:
 #   - A JDK (javac, keytool)
@@ -45,12 +45,12 @@ echo "== align =="
 echo "== sign (v1 required for KitKat) =="
 if [ ! -f "$KS" ]; then
   keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
-    -alias lvb -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=lvbatt" >/dev/null 2>&1
+    -alias bwd -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=batterywatchdog" >/dev/null 2>&1
 fi
 "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
   --v1-signing-enabled true --v2-signing-enabled true --min-sdk-version 19 \
-  --out "$APP/lvbatt.apk" "$OUT/aligned.apk"
+  --out "$APP/batterywatchdog.apk" "$OUT/aligned.apk"
 
-echo "== done: $APP/lvbatt.apk =="
-"$BT/aapt" dump badging "$APP/lvbatt.apk" 2>/dev/null | grep -E "package|sdkVersion" | head
-echo "Copy app/lvbatt.apk to package/app/lvbatt.apk, then build the NEMESIS zip."
+echo "== done: $APP/batterywatchdog.apk =="
+"$BT/aapt" dump badging "$APP/batterywatchdog.apk" 2>/dev/null | grep -E "package|sdkVersion" | head
+echo "Copy app/batterywatchdog.apk to package/app/batterywatchdog.apk, then build the NEMESIS zip."

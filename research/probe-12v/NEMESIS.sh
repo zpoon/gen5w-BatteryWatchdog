@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# 12V monitor - verification probe (READ-ONLY getters only).
+# Battery Watchdog - 12V verification probe (READ-ONLY getters only).
 # Answers: is hscan 0x89 (getBatSoc) really the 12V state of charge, is it
 # an int or a float, and what scale? Also records SOH (0xd6) for reference.
 #

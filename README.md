@@ -1,4 +1,4 @@
-# 12V Battery Monitor (lvbatt.monitor) — NEMESIS package for Gen5W
+# Battery Watchdog (battery.watchdog) — NEMESIS package for Gen5W
 
 Logs the 12V battery's state of charge every time the car starts and every
 few minutes while it's on. It warns with the factory toast when:
@@ -24,9 +24,9 @@ It never writes to the car.
 research/probe-12v/     USB probe (type=execute): samples 0x89 / 0xd6 / 0x4a / 0xd3 for ~3 min
 package/                the NEMESIS package
   NEMESIS.data          app + background service
-  svc/lvbatt.sh         the monitor service (root, read-only)
+  svc/watchdog.sh         the monitor service (root, read-only)
   scripts/post.sh       seeds default settings
-  app/lvbatt.apk        (built, copy here)
+  app/batterywatchdog.apk        (built, copy here)
 app/                    settings / history app (Java, no resources, built with dx)
 tools/build_apk.sh      javac -> dx (DEX 035) -> aapt -> v1 sign   (from hkmc-coldstart-heat)
 tools/make_package.sh   package zip + USB install bundle            (from hkmc-coldstart-heat)
@@ -58,20 +58,20 @@ Needs a JDK and an Android SDK with build-tools that still ship `dx` (e.g. 30.0.
 
 ```
 ANDROID_SDK=~/Android/Sdk tools/build_apk.sh
-cp app/lvbatt.apk package/app/lvbatt.apk
+cp app/batterywatchdog.apk package/app/batterywatchdog.apk
 tools/make_package.sh
 ```
 
-Extract `dist/lvbatt-monitor-USB.zip` to a FAT32/exFAT USB root and insert it in the car to install.
+Extract `dist/gen5w-BatteryWatchdog-USB.zip` to a FAT32/exFAT USB root and insert it in the car to install.
 
 ## 3. Use
 
-The **12V Monitor** app shows the latest reading, any active warning, a chart
+The **Battery Watchdog** app shows the latest reading, any active warning, a chart
 of recent samples (dots = start of a drive), and a **Read sensor now** button
 that prints the raw `getBatSoc` reply. That button is handy for re-checking the
 decode. Settings take effect on the next start.
 
-State lives in `/data/nemesis/state/lvbatt.monitor/`:
+State lives in `/data/nemesis/state/battery.watchdog/`:
 
 | file | contents |
 |---|---|
@@ -91,7 +91,7 @@ State lives in `/data/nemesis/state/lvbatt.monitor/`:
   re-learns. Treat a single odd reading as noise and watch the trend.
 - SOH (`0xd6`) is the **HV pack's** health index, logged for reference only.
 - Desktop test of the service script with mocked `service`/`am`:
-  `LVB_TEST=1 LVB_TEST_PATH=<mock bin> LVB_STATE=<tmp dir> sh package/svc/lvbatt.sh`
+  `BWD_TEST=1 BWD_TEST_PATH=<mock bin> BWD_STATE=<tmp dir> sh package/svc/watchdog.sh`
 
 ## Credits
 

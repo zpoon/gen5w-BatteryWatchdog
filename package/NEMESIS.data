@@ -1,19 +1,19 @@
 [nemesis]
 version=1.2
-id=lvbatt.monitor
-name=12V Battery Monitor
+id=battery.watchdog
+name=Battery Watchdog
 types=application,service
 postinstall=scripts/post.sh
 
 [app.0]
 kind=apk
-path=app/lvbatt.apk
-package=com.nemesis.lvbatt
-component=com.nemesis.lvbatt/.MainActivity
+path=app/batterywatchdog.apk
+package=com.nemesis.batterywatchdog
+component=com.nemesis.batterywatchdog/.MainActivity
 
 [service.0]
 name=monitor
 kind=sh
-path=svc/lvbatt.sh
+path=svc/watchdog.sh
 uid=root
 mode=background

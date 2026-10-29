@@ -1,4 +1,4 @@
-package com.nemesis.lvbatt;
+package com.nemesis.batterywatchdog;
 
 import android.app.Activity;
 import android.content.Context;
@@ -22,14 +22,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 12V Battery Monitor. Shows what the lvbatt.monitor service has logged and
+ * Battery Watchdog. Shows what the battery.watchdog service has logged and
  * edits its one-value config files. Reads/writes /data/nemesis/state through
  * the privileged `nemesis root -c` channel (this app runs as an ordinary uid).
  * Kotlin/lambdas avoided on purpose: built with legacy dx for KitKat (DEX 035).
  */
 public class MainActivity extends Activity {
 
-    static final String STATE = "/data/nemesis/state/lvbatt.monitor";
+    static final String STATE = "/data/nemesis/state/battery.watchdog";
     static final String NEM = "/system/xbin/nemesis";
     static final String[] DECODE = { "Auto", "Integer", "Float" };
     static final int[] INTERVALS = { 60, 300, 900 };
@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(18, 20, 24));
         sv.addView(root);
 
-        root.addView(title("12V Battery Monitor"));
+        root.addView(title("Battery Watchdog"));
 
         bigLabel = new TextView(this);
         bigLabel.setTextColor(Color.WHITE);

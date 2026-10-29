@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# lvbatt.monitor - 12V battery monitor for Gen5W (Hyundai/Kia) head units.
+# battery.watchdog - 12V battery monitor for Gen5W (Hyundai/Kia) head units.
 #
 # READ-ONLY: only calls getters on the telematics hscan service.
 #   12V SOC:  service call tm_hscan_service 137   (0x89 getBatSoc)   <- verify with the probe
@@ -14,17 +14,17 @@
 # Config: one-value files in $STATE (written by the app / post.sh).
 export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:$PATH
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
-[ -n "$LVB_TEST_PATH" ] && PATH=$LVB_TEST_PATH:$PATH   # desktop tests only (mock `service`/`am`)
+[ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock `service`/`am`)
 
-TAG=lvbatt.monitor
-STATE=${LVB_STATE:-/data/nemesis/state/$TAG}
+TAG=battery.watchdog
+STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
 TX_SOC=137
 TX_SOH=214
 mkdir -p "$STATE" 2>/dev/null
 LOG=$STATE/log.csv
 
-log() { echo "lvbatt: $(date 2>/dev/null) $*"; }
+log() { echo "watchdog: $(date 2>/dev/null) $*"; }
 
 cfg() { _f="$STATE/$1"; _d="$2"; if [ -r "$_f" ]; then read -r _v < "$_f" 2>/dev/null; case "$_v" in ''|*[!0-9-]*) echo "$_d";; *) echo "$_v";; esac; else echo "$_d"; fi; }
 
@@ -50,7 +50,7 @@ TOAST_START=$(cfg toast_start 0)
 MAX_LINES=$(cfg max_lines 4000)
 MAX_WAIT=$(cfg max_wait 120)
 [ "$INTERVAL" -lt 30 ] 2>/dev/null && INTERVAL=30
-[ -n "$LVB_TEST" ] && INTERVAL=${LVB_TEST_INTERVAL:-1}
+[ -n "$BWD_TEST" ] && INTERVAL=${BWD_TEST_INTERVAL:-1}
 
 log "start enabled=$ENABLED interval=$INTERVAL warn=$WARN_PCT drop=$DROP_PCT decode=$DECODE scale_x10=$SCALE"
 if [ "$ENABLED" != "1" ]; then log "disabled"; echo "state=disabled" > "$STATE/status"; exit 0; fi
@@ -137,7 +137,7 @@ while [ "$i" -lt "$MAX_WAIT" ]; do
     sleep 2; i=$((i + 2))
 done
 [ "$i" -ge "$MAX_WAIT" ] && log "$SVC not found after ${MAX_WAIT}s; continuing anyway"
-[ -z "$LVB_TEST" ] && sleep "$SETTLE"
+[ -z "$BWD_TEST" ] && sleep "$SETTLE"
 
 # ---- session start ----------------------------------------------------------
 sample
@@ -197,6 +197,6 @@ while :; do
         write_status ok
     fi
     LOOPS=$((LOOPS + 1))
-    [ -n "$LVB_TEST" ] && [ "$LOOPS" -ge "${LVB_TEST_LOOPS:-2}" ] && break
+    [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-2}" ] && break
 done
 exit 0
