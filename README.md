@@ -86,7 +86,7 @@ The **Battery Watchdog** app is laid out for the 1920×720 Gen5W screen, in
 three columns with no page scrolling:
 
 - **Left:** the latest 12V % (green, or amber below the warning level), the
-  current warning, HV SOH, and **Read sensor now**, which shows the live
+  current warning, a color-coded **HV battery health (SOH)** box, and **Read sensor now**, which shows the live
   `getBatSoc` value and its raw reply.
 - **Middle:** a full-height chart of recent samples. Dots mark the start of
   each drive, and the amber line is the warning level.
@@ -119,7 +119,9 @@ State lives in `/data/nemesis/state/battery.watchdog/`:
   **Advanced → Diagnostics**.
 - The IBS (battery sensor) SOC estimate can jump after the car sleeps or
   re-learns. Treat a single odd reading as noise and watch the trend.
-- SOH (`0xd6`) is the **HV pack's** health index, logged for reference only.
+- SOH (`0xd6`) is the **HV pack's** health index (100 = new). The app reads it
+  live each refresh and colors the box green ≥ 90, amber 75–89, red < 75. It
+  isn't monitored and never triggers a warning.
 - Desktop test of the service script with mocked `service`/`am`:
   `BWD_TEST=1 BWD_TEST_PATH=<mock bin> BWD_STATE=<tmp dir> sh package/svc/watchdog.sh`
 

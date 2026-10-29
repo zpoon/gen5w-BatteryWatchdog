@@ -6,6 +6,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
@@ -41,6 +42,8 @@ public class MainActivity extends Activity {
     boolean enabled = true, toastStart = false, advanced = false;
     int warnPct = 60, dropPct = 15, decode = 1, scaleX10 = 10, interval = 300;
 
+    LinearLayout sohBox;
+    TextView sohTitle, sohValue;
     TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
     Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
     LinearLayout advBox;
@@ -86,6 +89,20 @@ public class MainActivity extends Activity {
         left.addView(warnLabel);
         sohLabel = hint("");
         left.addView(sohLabel);
+        // HV battery health box: read live, not logged or monitored
+        sohBox = new LinearLayout(this);
+        sohBox.setOrientation(LinearLayout.VERTICAL);
+        sohBox.setPadding(dp(14), dp(10), dp(14), dp(10));
+        sohTitle = new TextView(this);
+        sohTitle.setText("HV battery health (SOH)");
+        sohTitle.setTextSize(14);
+        sohBox.addView(sohTitle);
+        sohValue = new TextView(this);
+        sohValue.setTextSize(30);
+        sohBox.addView(sohValue);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sp.setMargins(0, dp(8), dp(12), 0);
+        left.addView(sohBox, sp);
         left.addView(spacer());
         left.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
         rawLabel = hint("");
@@ -166,9 +183,10 @@ public class MainActivity extends Activity {
         else bigLabel.setText("No reading");
         updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0))
                 : "No reading from the monitor service yet. If this lasts more than a minute, open Advanced \u2192 Diagnostics.");
-        String sohText = soh.length() > 0 ? "HV battery health (SOH): " + soh : "";
-        if ("no_reading".equals(state)) sohText += "\nThe 12V value couldn't be decoded. Check Advanced settings.";
-        sohLabel.setText(sohText);
+        sohLabel.setText("no_reading".equals(state) ? "The 12V value couldn't be decoded. Check Advanced settings." : "");
+        int sohNow = readSoh();
+        if (sohNow < 0) sohNow = parse(soh, -1);   // fall back to the service's last value
+        showSoh(sohNow);
         warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "No warnings");
         warnLabel.setTextColor(warn.length() > 0 ? AMBER : MUTED);
 
@@ -184,6 +202,33 @@ public class MainActivity extends Activity {
         }
         if (pts.size() > 300) pts = pts.subList(pts.size() - 300, pts.size());
         chart.setData(pts, warnPct * 10);
+    }
+
+    // SOH: tm_hscan_service 214 (0xd6) returns one raw byte, a health index (100 = new).
+    int readSoh() {
+        String r = runRoot("service call tm_hscan_service 214").trim();
+        int i = r.indexOf("Parcel(");
+        if (i < 0) return -1;
+        String[] w = r.substring(i + 7).trim().split("\\s+");
+        if (w.length < 2 || !"00000000".equals(w[0])) return -1;
+        try { long v = Long.parseLong(w[1], 16); return v > 0 && v <= 100 ? (int) v : -1; } catch (Exception e) { return -1; }
+    }
+
+    // green >= 90, amber 75-89, red < 75, gray if unknown
+    void showSoh(int v) {
+        int bg, fg; String text;
+        if (v < 0)       { bg = Color.rgb(42, 47, 54);  fg = MUTED;                text = "--"; }
+        else if (v >= 90){ bg = Color.rgb(22, 60, 38);  fg = GREEN;                text = v + "%  Good"; }
+        else if (v >= 75){ bg = Color.rgb(70, 50, 18);  fg = AMBER;                text = v + "%  Fair"; }
+        else             { bg = Color.rgb(80, 28, 28);  fg = Color.rgb(255, 120, 110); text = v + "%  Low"; }
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(bg);
+        d.setCornerRadius(dp(10));
+        d.setStroke(dp(2), fg);
+        sohBox.setBackgroundDrawable(d);
+        sohTitle.setTextColor(fg);
+        sohValue.setTextColor(fg);
+        sohValue.setText(text);
     }
 
     void readNow() {
