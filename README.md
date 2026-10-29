@@ -110,8 +110,13 @@ State lives in `/data/nemesis/state/battery.watchdog/`:
 
 ## Notes / limits
 
-- One head-unit boot = one session. The "end" of a drive is the last sample,
-  so it can be up to `interval_s` before you turned the car off.
+- Gen5W usually doesn't reboot between drives (QuickBoot/suspend), so the
+  service runs as `mode=restart` and starts a new session (one drive) when the
+  display wakes up, or when the wall clock jumps by `gap_s` (default 10 min)
+  because the unit was asleep. The "end" of a drive is the last sample, so it
+  can be up to `interval_s` before you turned the car off.
+- Service output: `nemesis log service battery.watchdog/monitor`, or the app's
+  **Advanced → Diagnostics**.
 - The IBS (battery sensor) SOC estimate can jump after the car sleeps or
   re-learns. Treat a single odd reading as noise and watch the trend.
 - SOH (`0xd6`) is the **HV pack's** health index, logged for reference only.

@@ -1,6 +1,7 @@
 package com.nemesis.batterywatchdog;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -127,6 +128,8 @@ public class MainActivity extends Activity {
         advBox.addView(decBtn);
         scaleBtn = button("", new View.OnClickListener() { public void onClick(View v) { scaleX10 = scaleX10 == 10 ? 5 : 10; refreshButtons(); } });
         advBox.addView(scaleBtn);
+        advBox.addView(button("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
+        advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
         advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
         right.addView(advBox);
 
@@ -159,9 +162,10 @@ public class MainActivity extends Activity {
             bigLabel.setText(fmt10(p) + "%");
             bigLabel.setTextColor(p < warnPct * 10 ? AMBER : GREEN);
         }
-        else if (state.length() == 0) bigLabel.setText("No data yet");
+        else if (state.length() == 0) bigLabel.setText("Waiting…");
         else bigLabel.setText("No reading");
-        updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0)) : "");
+        updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0))
+                : "No reading from the monitor service yet. If this lasts more than a minute, open Advanced \u2192 Diagnostics.");
         String sohText = soh.length() > 0 ? "HV battery health (SOH): " + soh : "";
         if ("no_reading".equals(state)) sohText += "\nThe 12V value couldn't be decoded. Check Advanced settings.";
         sohLabel.setText(sohText);
@@ -193,6 +197,33 @@ public class MainActivity extends Activity {
             }
         }
         rawLabel.setText(shown);
+    }
+
+    static final String SVC_ID = "battery.watchdog/monitor";
+    static final String SVC_LOG = "/data/nemesis/logs/battery.watchdog/monitor.log";
+
+    void showDiagnostics() {
+        StringBuilder d = new StringBuilder();
+        d.append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n\n");
+        d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
+        d.append("display: ").append(runRoot("dumpsys power | grep -E 'mWakefulness=|mScreenOn=|policy=' 2>/dev/null").trim()).append("\n\n");
+        d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n\n");
+        d.append("status:\n").append(runRoot("cat " + STATE + "/status 2>&1").trim()).append("\n\n");
+        String log = runRoot("cat " + SVC_LOG + " 2>&1");
+        if (log.trim().length() == 0 || log.contains("No such file"))
+            log = runRoot(NEM + " log service " + SVC_ID + " 2>&1");
+        String[] lines = log.split("\n");
+        d.append("service log (last 25 lines):\n");
+        for (int i = Math.max(0, lines.length - 25); i < lines.length; i++) d.append(lines[i]).append("\n");
+        new AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(d.toString())
+            .setPositiveButton("Close", null).show();
+    }
+
+    void restartService() {
+        String r = runRoot(NEM + " service stop " + SVC_ID + " 2>&1; " + NEM + " service start " + SVC_ID + " 2>&1; "
+                + NEM + " service status " + SVC_ID + " 2>&1");
+        rawLabel.setText(r.trim());
+        toast("Monitor restarted");
     }
 
     void clearHistory() {

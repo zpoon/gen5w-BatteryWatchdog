@@ -16,4 +16,4 @@ name=monitor
 kind=sh
 path=svc/watchdog.sh
 uid=root
-mode=background
+mode=restart
