@@ -27,9 +27,19 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null || true
           "$SDKM" "build-tools;30.0.3" "platforms;android-30" > /dev/null
 
-      - name: Check shell scripts parse
+      - name: Install mksh (the head unit's shell)
+        run: sudo apt-get install -y -qq mksh > /dev/null
+
+      - name: Check shell scripts parse (sh and mksh)
         run: |
-          for f in package/svc/*.sh package/scripts/*.sh research/probe-12v/NEMESIS.sh; do sh -n "$f"; done
+          for f in package/svc/*.sh package/scripts/*.sh research/probe-12v/NEMESIS.sh; do
+            sh -n "$f"; mksh -n "$f"
+          done
+
+      - name: Test the monitor service with mocked car services
+        run: |
+          tests/test_service.sh sh
+          tests/test_service.sh mksh
 
       - name: Build APK
         run: |

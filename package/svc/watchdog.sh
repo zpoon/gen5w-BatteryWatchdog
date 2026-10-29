@@ -85,7 +85,7 @@ call_word() {   # sets RAW (8 hex digits) or returns 1
     RAW=""
     _o=$(service call "$SVC" "$1" 2>/dev/null)
     case "$_o" in *'Parcel('*) ;; *) return 1;; esac
-    _o=${_o#*Parcel(}
+    _o=${_o#*"Parcel("}    # keep the paren quoted: KitKat mksh mis-parses a bare one here
     set -- $_o
     [ "$1" = "00000000" ] || return 1
     case "$2" in [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) return 1;; esac
@@ -244,9 +244,10 @@ while :; do
 
     T=$(now)
     DISP=$(display_state)
-    if [ "$PREV_DISP" = off ] && [ "$DISP" != off ]; then NEED_SESSION=${NEED_SESSION:-display_wake}; fi
+    if [ "$PREV_DISP" = off ] && [ "$DISP" != off ] && [ -z "$NEED_SESSION" ]; then NEED_SESSION=display_wake; fi
     if [ "$CLOCK_OK" = 1 ] && [ $((T - LAST_TICK)) -ge "$GAP" ]; then
-        NEED_SESSION=${NEED_SESSION:-"resume_after_$((T - LAST_TICK))s"}
+        _gap=$((T - LAST_TICK))
+        [ -z "$NEED_SESSION" ] && NEED_SESSION="resume_after_${_gap}s"
     fi
 
     if [ -n "$NEED_SESSION" ] && [ "$DISP" != off ]; then
