@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 mkdir -p "$ROOT/dist"
 rm -f "$ROOT/dist/battery.watchdog.zip"
-( cd "$ROOT/package" && zip -r -X "$ROOT/dist/battery.watchdog.zip" . -x '.*' >/dev/null )
+( cd "$ROOT/package" && zip -r -X "$ROOT/dist/battery.watchdog.zip" . -x '.*' -x '*/.keep' >/dev/null )
 echo "wrote dist/battery.watchdog.zip"
 
 # USB bundle: NEMESIS.data (type=install) at root + the package zip under packages/
@@ -23,5 +23,6 @@ type=install
 path=packages/battery.watchdog.zip
 EOF
 rm -f "$ROOT/dist/gen5w-BatteryWatchdog-USB.zip"
-( cd "$ROOT/dist" && zip -r -X gen5w-BatteryWatchdog-USB.zip usb-bundle >/dev/null && rm -rf usb-bundle )
+# zip the bundle's CONTENTS so NEMESIS.data lands at the USB root when extracted
+( cd "$TMP" && zip -r -X "$ROOT/dist/gen5w-BatteryWatchdog-USB.zip" . >/dev/null ) && rm -rf "$TMP"
 echo "wrote dist/gen5w-BatteryWatchdog-USB.zip (extract to a FAT32/exFAT USB root)"
