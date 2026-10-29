@@ -246,10 +246,14 @@ public class MainActivity extends Activity {
 
     static final String SVC_ID = "battery.watchdog/monitor";
     static final String SVC_LOG = "/data/nemesis/logs/battery.watchdog/monitor.log";
+    static final String SVC_SCRIPT = "/data/nemesis/apps/battery.watchdog/svc/watchdog.sh";
 
     void showDiagnostics() {
         StringBuilder d = new StringBuilder();
-        d.append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n\n");
+        d.append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
+        d.append("shell: ").append(runRoot("echo $KSH_VERSION").trim()).append("\n");
+        String chk = runRoot("/system/bin/sh -n " + SVC_SCRIPT + " 2>&1 && echo OK").trim();
+        d.append("script syntax check: ").append(chk.length() == 0 ? "(no output)" : chk).append("\n\n");
         d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
         d.append("display: ").append(runRoot("dumpsys power | grep -E 'mWakefulness=|mScreenOn=|policy=' 2>/dev/null").trim()).append("\n\n");
         d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n\n");

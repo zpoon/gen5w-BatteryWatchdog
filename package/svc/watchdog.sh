@@ -18,7 +18,7 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.2
+VERSION=0.2.3
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
@@ -80,16 +80,20 @@ display_state() {
 }
 
 # ---- binder read -------------------------------------------------------------
-# `service call` prints e.g.  Result: Parcel(00000000 0000005f   '...._...')
-call_word() {   # sets RAW (8 hex digits) or returns 1
+# `service call` prints e.g.   Result: Parcel<00000000 00000053 '....S...'>
+# (with round brackets). Split on whitespace and use the words, so this code
+# contains no bracket characters at all: KitKat's mksh failed to parse two
+# earlier versions that matched on the bracket ("'{' unmatched" here).
+#   word 1 = "Result:"   word 2 = "Parcel" + status   word 3 = value
+call_word() {
     RAW=""
     _o=$(service call "$SVC" "$1" 2>/dev/null)
-    case "$_o" in *'Parcel('*) ;; *) return 1;; esac
-    _o=${_o#*"Parcel("}    # keep the paren quoted: KitKat mksh mis-parses a bare one here
     set -- $_o
-    [ "$1" = "00000000" ] || return 1
-    case "$2" in [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) return 1;; esac
-    RAW=$2
+    [ "$1" = "Result:" ] || return 1
+    case "$2" in *00000000) ;; *) return 1;; esac
+    _v=$3
+    case "$_v" in [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) return 1;; esac
+    RAW=$_v
 }
 
 float10() {   # float bits (hex) -> value x10, or -1
@@ -159,8 +163,8 @@ load_cfg() {
     SETTLE=$(cfg settle_s 30)
     WARN_PCT=$(cfg warn_pct 60)
     DROP_PCT=$(cfg drop_pct 15)
-    DECODE=$(cfg decode 1)        # 0 auto, 1 int (probe-confirmed), 2 float
-    SCALE=$(cfg scale_x10 10)     # % per raw unit, x10 (10 = 1 %, 5 = 0.5 %)
+    DECODE=$(cfg decode 1)        # 0 auto, 1 int = probe-confirmed, 2 float
+    SCALE=$(cfg scale_x10 10)     # % per raw unit, x10: 10 = 1 %, 5 = 0.5 %
     TOAST_START=$(cfg toast_start 0)
     MAX_LINES=$(cfg max_lines 4000)
     POLL=$(cfg poll_s 15)
@@ -177,11 +181,11 @@ session_start() {   # reason
     SESS_T=$(now); SESS_P=$S_PCT10; LAST_SAMPLE=$SESS_T
     WARN_TEXT=""; PREV_LINE=""
     if [ "$S_PCT10" -lt 0 ]; then
-        log "session ($1): no valid 12V reading (raw=$S_RAW)"
+        log "session [$1]: no valid 12V reading, raw=$S_RAW"
         write_status no_reading
         return
     fi
-    log "session ($1): 12V $(fmt10 "$S_PCT10")% (raw $S_RAW) soh_raw=$SOH_RAW"
+    log "session [$1]: 12V $(fmt10 "$S_PCT10")% raw=$S_RAW soh_raw=$SOH_RAW"
     PS_T=""; PS_P=""; PE_T=""; PE_P=""
     [ -r "$STATE/sess_start" ] && read -r PS_T PS_P < "$STATE/sess_start"
     [ -r "$STATE/last" ] && read -r PE_T PE_P < "$STATE/last"
@@ -190,7 +194,7 @@ session_start() {   # reason
     if [ -n "$PE_P" ] && [ "$PE_P" -ge 0 ] 2>/dev/null; then
         DROP=$((PE_P - S_PCT10))
         if [ "$DROP" -ge $((DROP_PCT * 10)) ]; then
-            W="12V dropped $(fmt10 "$DROP") pts while parked ($(fmt10 "$PE_P")% -> $(fmt10 "$S_PCT10")%)"
+            W="12V dropped $(fmt10 "$DROP") pts while parked: $(fmt10 "$PE_P")% -> $(fmt10 "$S_PCT10")%"
             WARN_TEXT=${WARN_TEXT:+$WARN_TEXT; }$W
         fi
         if [ -n "$PS_P" ] && [ "$PS_P" -ge 0 ] 2>/dev/null && [ "$PS_T" -gt 0 ] 2>/dev/null && [ "$PE_T" -gt "$PS_T" ] 2>/dev/null; then
@@ -199,7 +203,7 @@ session_start() {   # reason
             PREV_LINE="$PS_T $DRIVE_MIN $PS_P $PE_P"
             echo "$PREV_LINE" >> "$STATE/sessions"
             if [ "$DRIVE_MIN" -ge 20 ] && [ "$DRIVE_MIN" -le 1440 ] && [ "$REC" -lt 0 ]; then
-                W="12V did not recover on last drive ($(fmt10 "$PS_P")% -> $(fmt10 "$PE_P")% over ${DRIVE_MIN} min)"
+                W="12V did not recover on last drive: $(fmt10 "$PS_P")% -> $(fmt10 "$PE_P")% over ${DRIVE_MIN} min"
                 WARN_TEXT=${WARN_TEXT:+$WARN_TEXT; }$W
             fi
         fi
