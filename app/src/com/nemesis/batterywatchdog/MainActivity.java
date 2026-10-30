@@ -485,7 +485,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.3";   // keep in step with AndroidManifest versionName
+    static final String APP_VERSION = "0.5.4";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
@@ -605,6 +605,7 @@ public class MainActivity extends Activity {
         d.append("firmware: ").append(fw).append("\n");
         d.append("verification: ").append(verifyState).append(verifySource.length() > 0 ? " (" + verifySource + ")" : "")
             .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
+        d.append("file writes: ").append(lastWriteMethod.length() > 0 ? lastWriteMethod : "(none yet)").append("\n");
         d.append("lookup by name:\n").append(firstLines(runRoot("cat " + STATE + "/resolve.log 2>/dev/null"), 8)).append("\n");
         // newest log lines first, so the latest error is at the top
         String log = runRoot("cat " + SVC_LOG + " 2>&1");
@@ -770,8 +771,10 @@ public class MainActivity extends Activity {
         err += writeToUsb("warnings.txt", wr.toString(), dir);
         err += writeToUsb("diagnostics.txt", "Battery Watchdog export " + stamp + "\n\n" + buildDiagnostics(), dir);
         runRoot("sync");
-        if (err.length() > 0) return "Some files couldn't be written to " + dir + ":\n" + err;
-        return "Exported " + rows + " readings and " + drives + " drives to\n" + dir
+        String rawList = runRoot("ls " + shq(dir + "/raw") + " 2>&1").trim().replace("\n", " ");
+        if (err.length() > 0) return "Some files couldn't be written to " + dir + ":\n" + err
+            + "\nraw/ on the drive: " + (rawList.length() > 0 ? rawList : "(empty)");
+        return "Exported " + rows + " readings and " + drives + " drives (written via " + lastWriteMethod + ") to\n" + dir
             + "\n\nreadings.csv and drives.csv open in Excel or Google Sheets. raw/ has the original files.";
     }
 
@@ -805,31 +808,82 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Writes {@code content} to {@code path} as root. The text is passed on the
-     * root shell's stdin (`cat > path`), not through a file in the app's cache:
-     * on the head unit the root shell couldn't read the app's cache (resolve.log
-     * never appeared). Falls back to appending chunks with echo if stdin isn't
-     * forwarded. Returns "" on success, otherwise an error text.
+     * Writes {@code content} to {@code path} as root. Getting text from this app
+     * to a root shell isn't straightforward on the head unit, so it tries several
+     * ways in turn and checks each by reading the file back:
+     *   1. stage it in the app's external files dir (shared storage, readable by
+     *      root), then `cat` it into place;
+     *   2. stage it in the app's cache, world-readable, then `cat`;
+     *   3. pipe it to `cat > path` on the root shell's stdin;
+     *   4. append it in small chunks with mksh's `print -r` (no escape handling).
+     * Returns "" on success, otherwise what each attempt did. lastWriteMethod
+     * records which one worked (shown in Diagnostics).
      */
     String writeRoot(String path, String content) {
-        String q = "'" + path.replace("'", "'\\''") + "'";
+        String q = shq(path);
+        StringBuilder why = new StringBuilder();
+        byte[] bytes;
+        try { bytes = content.getBytes("UTF-8"); } catch (Exception e) { return e.toString(); }
+
+        // 1 + 2: stage a file, root copies it
+        File[] stages = { stageDir(true), stageDir(false) };
+        String[] names = { "external", "cache" };
+        for (int i = 0; i < stages.length; i++) {
+            File dir = stages[i];
+            if (dir == null) { why.append(names[i]).append(": no dir; "); continue; }
+            File tmp = new File(dir, "bwd-stage.tmp");
+            try {
+                java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
+                try { out.write(bytes); } finally { out.close(); }
+                tmp.setReadable(true, false);
+                dir.setExecutable(true, false);
+                String r = runRoot("cat " + shq(tmp.getAbsolutePath()) + " > " + q + " 2>&1").trim();
+                boolean ok = sameContent(path, content);
+                tmp.delete();
+                if (ok) { lastWriteMethod = names[i]; return ""; }
+                why.append(names[i]).append(": ").append(r.length() > 0 ? r : "mismatch").append("; ");
+            } catch (Exception e) {
+                tmp.delete();
+                why.append(names[i]).append(": ").append(e.getMessage()).append("; ");
+            }
+        }
+
+        // 3: stdin
         try {
             Process p = Runtime.getRuntime().exec(new String[] { NEM, "root", "-c", "cat > " + q });
             java.io.OutputStream o = p.getOutputStream();
-            o.write(content.getBytes("UTF-8"));
+            o.write(bytes);
             o.close();
             p.waitFor();
-        } catch (Exception e) { /* fall through to the check */ }
-        if (sameContent(path, content)) return "";
-        // fallback: echo line by line, a few KB per root call
+            if (sameContent(path, content)) { lastWriteMethod = "stdin"; return ""; }
+            why.append("stdin: mismatch; ");
+        } catch (Exception e) { why.append("stdin: ").append(e.getMessage()).append("; "); }
+
+        // 4: small chunks, raw print (mksh's echo would interpret backslashes)
         runRoot(": > " + q);
         StringBuilder cmd = new StringBuilder();
         for (String line : content.split("\n", -1)) {
-            cmd.append("echo '").append(line.replace("'", "'\\''")).append("' >> ").append(q).append("; ");
-            if (cmd.length() > 8000) { runRoot(cmd.toString()); cmd.setLength(0); }
+            cmd.append("print -r -- ").append(shq(line)).append(" >> ").append(q).append("; ");
+            if (cmd.length() > 1500) { runRoot(cmd.toString()); cmd.setLength(0); }
         }
         if (cmd.length() > 0) runRoot(cmd.toString());
-        return sameContent(path, content) ? "" : "couldn't write " + path;
+        if (sameContent(path, content)) { lastWriteMethod = "chunks"; return ""; }
+        why.append("chunks: mismatch");
+        lastWriteMethod = "failed";
+        return why.toString();
+    }
+
+    String lastWriteMethod = "";
+
+    static String shq(String s) { return "'" + s.replace("'", "'\\''") + "'"; }
+
+    File stageDir(boolean external) {
+        try {
+            File d = external ? getExternalFilesDir(null) : getCacheDir();
+            if (d == null) return null;
+            d.mkdirs();
+            return d.isDirectory() ? d : null;
+        } catch (Exception e) { return null; }
     }
 
     boolean sameContent(String path, String content) {
