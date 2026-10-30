@@ -192,10 +192,14 @@ temp_from_logcat() {
     return 1
 }
 
+# The ECO log line only shows up every so often (on the car it appeared a few
+# minutes into a drive), so keep the last value for up to 30 min instead of
+# blanking it between messages.
+TEMP_T=0
 read_temp() {
     TEMP_LINE=""
-    temp_from_datc && return
-    temp_from_logcat && return
+    if temp_from_datc || temp_from_logcat; then TEMP_T=$(now); return; fi
+    if [ -n "$TEMP_C" ] && [ $(( $(now) - TEMP_T )) -le 1800 ]; then return; fi
     TEMP_C=""; TEMP_SRC=""
 }
 

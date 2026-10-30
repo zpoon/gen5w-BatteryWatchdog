@@ -123,6 +123,13 @@ temp_case "K multi-line dump, second line labelled" "OutTemp = 77
 temp_case "L newest ECO line wins" "" '{"outTemperature":1}
 {"outTemperature":7}' 7 eco_log
 
+# N: temperature is kept when the log line ages out between samples
+T=$(mktemp -d); setup "$T"
+( sleep 3; : > "$T/logcat" ) &
+run "$T" 8; wait
+grep -q '^temp_c=12$' "$T/state/status" || fail "N: last temperature should be kept"
+rm -rf "$T"; echo "  N temperature kept between log lines: ok"
+
 # M: nothing temporary left behind in the state dir
 T=$(mktemp -d); setup "$T"; printf '  mOutTempC = 4\n' > "$T/datc"; run "$T" 3
 ls -a "$T/state" | grep -E '\.tmp$|^\.datc|^\.temp' && fail "M: temp files left in the state dir"
