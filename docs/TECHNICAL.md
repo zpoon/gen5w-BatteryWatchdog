@@ -130,7 +130,7 @@ For owners:
 1. Install the package and open the app. If Diagnostics shows
    `verification: resolved (…)`, the numbers were found by name and the
    monitor runs. Please still file a
-   [firmware report](../../issues/new?template=firmware-report.yml) so the
+   [firmware report](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/new?template=firmware-report.yml) so the
    compatibility table grows.
 2. If it shows **Paused**, check the numbers **offline**, without calling them:
    - put the two files from `research/odex-dump/` on the root of a USB drive,

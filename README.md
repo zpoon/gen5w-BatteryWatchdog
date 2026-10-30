@@ -47,7 +47,7 @@ All data stays on the head unit.
 
 Other Gen5W cars may work if their firmware provides the same values. On
 first launch the app checks your firmware automatically. Either way, please
-file a [firmware report](../../issues/new?template=firmware-report.yml) so
+file a [firmware report](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/new?template=firmware-report.yml) so
 the table can grow. If it shows **Paused**, see [Safety](#safety).
 
 ## Requirements
