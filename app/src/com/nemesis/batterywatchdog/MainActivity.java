@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
 
     LinearLayout sohBox;
     TextView sohTitle, sohValue;
+    TextView parkLabel, ctxLabel;
     TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
     Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
     LinearLayout advBox;
@@ -90,6 +91,13 @@ public class MainActivity extends Activity {
         left.addView(bigLabel);
         updLabel = hint("");
         left.addView(updLabel);
+        parkLabel = new TextView(this);
+        parkLabel.setTextColor(Color.WHITE);
+        parkLabel.setTextSize(15);
+        left.addView(parkLabel);
+        ctxLabel = hint("");
+        ctxLabel.setPadding(0, dp(2), 0, dp(2));
+        left.addView(ctxLabel);
         warnLabel = new TextView(this);
         warnLabel.setTextColor(AMBER);
         warnLabel.setTextSize(16);
@@ -195,6 +203,29 @@ public class MainActivity extends Activity {
         else bigLabel.setText("No reading");
         updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0))
                 : "No reading yet. If this lasts, see Advanced \u2192 Diagnostics.");
+        // parked time before this drive, and how the 12V changed meanwhile
+        int pMin = parse(kv(status, "parked_min"), -1);
+        int pDrop = parse(kv(status, "parked_drop10"), Integer.MIN_VALUE);
+        int pRate = parse(kv(status, "parked_rate10_day"), Integer.MIN_VALUE);
+        if (pMin >= 0 && pDrop != Integer.MIN_VALUE) {
+            StringBuilder pk = new StringBuilder("Parked ").append(duration(pMin)).append(" before this drive: ");
+            pk.append(pDrop > 0 ? "\u2212" + fmt10(pDrop) + " pts" : pDrop < 0 ? "+" + fmt10(-pDrop) + " pts" : "no change");
+            if (pRate != Integer.MIN_VALUE && pDrop > 0) pk.append("  (\u2212").append(fmt10(pRate)).append("/day)");
+            parkLabel.setText(pk.toString());
+            parkLabel.setTextColor(pDrop >= dropPct * 10 ? AMBER : Color.WHITE);
+        } else {
+            parkLabel.setText("");
+        }
+        // context: main battery charge and outside temperature
+        int hv = parse(kv(status, "hv10"), -1);
+        int tc = parse(kv(status, "temp_c"), Integer.MIN_VALUE);
+        StringBuilder cx = new StringBuilder();
+        if (hv >= 0) cx.append("Main battery ").append(fmt10(hv)).append("%");
+        if (tc != Integer.MIN_VALUE) {
+            if (cx.length() > 0) cx.append("  \u00B7  ");
+            cx.append("Outside ").append(Math.round(tc * 9 / 5f + 32)).append("\u00B0F");
+        }
+        ctxLabel.setText(cx.toString());
         boolean noRead = "no_reading".equals(state);
         sohLabel.setText(noRead ? "The 12V value couldn't be decoded. Check Advanced settings." : "");
         sohLabel.setVisibility(noRead ? View.VISIBLE : View.GONE);
@@ -436,6 +467,11 @@ public class MainActivity extends Activity {
     static int parse(String s, int d) { try { return Integer.parseInt(s.trim()); } catch (Exception e) { return d; } }
     static long parseL(String s, long d) { try { return Long.parseLong(s.trim()); } catch (Exception e) { return d; } }
     static String fmt10(int v) { return (v / 10) + "." + (v % 10); }
+    static String duration(int min) {
+        if (min < 60) return min + " min";
+        if (min < 48 * 60) return (min / 60) + " h " + (min % 60) + " min";
+        return (min / 1440) + " d " + ((min % 1440) / 60) + " h";
+    }
     static String time(long epoch) {
         return new SimpleDateFormat("MMM d, h:mm a", Locale.US).format(new Date(epoch * 1000));
     }

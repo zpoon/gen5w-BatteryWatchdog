@@ -85,8 +85,10 @@ Extract `dist/gen5w-BatteryWatchdog-USB.zip` to a FAT32/exFAT USB root and inser
 The **Battery Watchdog** app is laid out for the 1920×720 Gen5W screen, in
 three columns with no page scrolling:
 
-- **Left:** the latest 12V % (green, or amber below the warning level), the
-  current warning, and a color-coded **HV battery health (SOH)** box.
+- **Left:** the latest 12V % (green, or amber below the warning level); how
+  long the car sat before this drive and how much the 12V changed meanwhile,
+  with a per-day rate; main battery charge and outside temperature; the
+  current warning; and a color-coded **HV battery health (SOH)** box.
 - **Middle:** a full-height chart of recent samples. Dots mark the start of
   each drive, and the amber line is the warning level.
 - **Right:** warning settings. Under **Advanced**: sampling interval, decode,
@@ -100,7 +102,7 @@ State lives in `/data/nemesis/state/battery.watchdog/`:
 
 | file | contents |
 |---|---|
-| `log.csv` | `epoch,event(start/sample),raw_hex,pct10,soh_raw` — rotates to `log.old.csv` at `max_lines` |
+| `log.csv` | `epoch,event(start/sample),raw_hex,pct10,soh_raw,hv10,temp_c` — rotates to `log.old.csv` at `max_lines` |
 | `sessions` | one line per finished drive: `start_epoch minutes start_pct10 end_pct10` |
 | `warnings` | every warning raised, timestamped |
 | `status` | latest state for the app |
@@ -124,6 +126,9 @@ State lives in `/data/nemesis/state/battery.watchdog/`:
   **Advanced → Diagnostics**.
 - The IBS (battery sensor) SOC estimate can jump after the car sleeps or
   re-learns. Treat a single odd reading as noise and watch the trend.
+- Main battery charge is `tm_hscan_service 74` (float, %). Outside temperature
+  is parsed from the telematics `"outTemperature"` JSON in logcat, as
+  hkmc-coldstart-heat does. Warnings append it, e.g. `…, outside 34F`.
 - SOH (`0xd6`) is the **HV pack's** health index (100 = new). The app reads it
   live each refresh and colors the box green ≥ 90, amber 75–89, red < 75. It
   isn't monitored and never triggers a warning.

@@ -18,12 +18,13 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.2.7
+VERSION=0.3.0
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
 TX_SOC=137
 TX_SOH=214
+TX_HVSOC=74      # 0x4a remainBatteryPercentage: float, main battery SOC (probe: 70.5)
 mkdir -p "$STATE" 2>/dev/null
 LOG=$STATE/log.csv
 
@@ -123,7 +124,21 @@ decode() {   # RAW -> tenths of a percent, or -1
     if [ "$_p" -lt 0 ] || [ "$_p" -gt 1000 ]; then echo -1; else echo "$_p"; fi
 }
 
-SOH_RAW=""
+# Outside temperature in whole deg C from the telematics ECO JSON in logcat
+# (same source hkmc-coldstart-heat uses). Sets TEMP_C, or leaves it empty.
+read_temp() {
+    _line=""
+    logcat -d 2>/dev/null | grep '"outTemperature":' > "$STATE/.temp.tmp" 2>/dev/null
+    while IFS= read -r _x; do [ -n "$_x" ] && _line=$_x; done < "$STATE/.temp.tmp"
+    rm "$STATE/.temp.tmp" 2>/dev/null
+    [ -z "$_line" ] && return
+    _c=${_line#*\"outTemperature\":}
+    _c=${_c%%[!0-9-]*}
+    case "$_c" in ''|-|*[!0-9-]*) return;; esac
+    if [ "$_c" -ge -50 ] && [ "$_c" -le 60 ]; then TEMP_C=$_c; fi
+}
+
+SOH_RAW=""; HV10=""; TEMP_C=""
 sample() {   # sets S_RAW, S_PCT10 (-1 if invalid)
     S_RAW=""; S_PCT10=-1
     _try=0
@@ -132,10 +147,15 @@ sample() {   # sets S_RAW, S_PCT10 (-1 if invalid)
         _try=$((_try + 1)); sleep 2
     done
     if call_word "$TX_SOH"; then SOH_RAW=$(hex2dec "$RAW"); fi
+    if call_word "$TX_HVSOC"; then
+        _h=$(float10 "$RAW")
+        if [ "$_h" -ge 0 ] && [ "$_h" -le 1000 ]; then HV10=$_h; fi
+    fi
+    read_temp
 }
 
 append() {   # event raw pct10
-    echo "$(now),$1,$2,$3,$SOH_RAW" >> "$LOG"
+    echo "$(now),$1,$2,$3,$SOH_RAW,$HV10,$TEMP_C" >> "$LOG"
     LINES=$((LINES + 1))
     if [ "$LINES" -ge "$MAX_LINES" ]; then mv "$LOG" "$STATE/log.old.csv" 2>/dev/null; LINES=0; fi
     put "$STATE/lines" "$LINES"
@@ -152,6 +172,11 @@ write_status() {   # state
         echo "display=$DISP"
         echo "session_start=$SESS_T $SESS_P"
         echo "prev_session=$PREV_LINE"
+        echo "hv10=$HV10"
+        echo "temp_c=$TEMP_C"
+        echo "parked_min=$PARK_MIN"
+        echo "parked_drop10=$PARK_DROP10"
+        echo "parked_rate10_day=$PARK_RATE10"
         echo "warn=$WARN_TEXT"
     } > "$STATE/status.tmp" 2>/dev/null && cat "$STATE/status.tmp" > "$STATE/status" 2>/dev/null
     rm "$STATE/status.tmp" 2>/dev/null
@@ -185,14 +210,21 @@ session_start() {   # reason
         write_status no_reading
         return
     fi
-    log "session [$1]: 12V $(fmt10 "$S_PCT10")% raw=$S_RAW soh_raw=$SOH_RAW"
+    log "session [$1]: 12V $(fmt10 "$S_PCT10")% raw=$S_RAW soh_raw=$SOH_RAW hv10=$HV10 temp_c=$TEMP_C"
     PS_T=""; PS_P=""; PE_T=""; PE_P=""
     [ -r "$STATE/sess_start" ] && read -r PS_T PS_P < "$STATE/sess_start"
     [ -r "$STATE/last" ] && read -r PE_T PE_P < "$STATE/last"
 
     [ "$S_PCT10" -lt $((WARN_PCT * 10)) ] && WARN_TEXT="12V battery low: $(fmt10 "$S_PCT10")%"
+    PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
     if [ -n "$PE_P" ] && [ "$PE_P" -ge 0 ] 2>/dev/null; then
         DROP=$((PE_P - S_PCT10))
+        # how long it sat since the last sample of the previous drive
+        if [ "$PE_T" -gt 0 ] 2>/dev/null && [ "$SESS_T" -gt "$PE_T" ]; then
+            PARK_MIN=$(( (SESS_T - PE_T) / 60 ))
+            PARK_DROP10=$DROP
+            [ "$PARK_MIN" -ge 60 ] && PARK_RATE10=$(( DROP * 1440 / PARK_MIN ))
+        fi
         if [ "$DROP" -ge $((DROP_PCT * 10)) ]; then
             W="12V dropped $(fmt10 "$DROP") pts while parked: $(fmt10 "$PE_P")% -> $(fmt10 "$S_PCT10")%"
             WARN_TEXT=${WARN_TEXT:+$WARN_TEXT; }$W
@@ -211,6 +243,7 @@ session_start() {   # reason
     put "$STATE/sess_start" "$SESS_T $SESS_P"
     put "$STATE/last" "$SESS_T $SESS_P"
     if [ -n "$WARN_TEXT" ]; then
+        [ -n "$TEMP_C" ] && WARN_TEXT="$WARN_TEXT, outside $(( TEMP_C * 9 / 5 + 32 ))F"
         log "WARN $WARN_TEXT"; echo "$(now) $WARN_TEXT" >> "$STATE/warnings"; toast "$WARN_TEXT"
     elif [ "$TOAST_START" = "1" ]; then
         toast "12V battery $(fmt10 "$S_PCT10")%"
@@ -236,6 +269,7 @@ PREV_DISP=$DISP
 LAST_TICK=$(now)
 LAST_SAMPLE=0
 SESS_T=""; SESS_P=""; PREV_LINE=""; WARN_TEXT=""; S_PCT10=-1; S_RAW=""
+PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
 NEED_SESSION=service_start
 LOOPS=0
 
