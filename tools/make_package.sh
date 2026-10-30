@@ -9,8 +9,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 mkdir -p "$ROOT/dist"
 rm -f "$ROOT/dist/battery.watchdog.zip"
-( cd "$ROOT/package" && zip -r -X "$ROOT/dist/battery.watchdog.zip" . -x '.*' -x '*/.keep' >/dev/null )
-echo "wrote dist/battery.watchdog.zip"
+# stamp the version into a staged copy of the package
+VER=$("$ROOT/tools/version.sh" name)
+STAGE="$ROOT/dist/package-stage"
+rm -rf "$STAGE"; cp -R "$ROOT/package" "$STAGE"
+sed -i "s/^VERSION=.*/VERSION=$VER/" "$STAGE/svc/watchdog.sh"
+( cd "$STAGE" && zip -r -X "$ROOT/dist/battery.watchdog.zip" . -x '.*' -x '*/.keep' >/dev/null )
+rm -rf "$STAGE"
+echo "wrote dist/battery.watchdog.zip (version $VER)"
 
 # USB bundle: NEMESIS.data (type=install) at root + the package zip under packages/
 TMP="$ROOT/dist/usb-bundle"

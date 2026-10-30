@@ -35,8 +35,11 @@ javac --release 8 -classpath "$AJ" -d "$OUT/classes" $(find "$APP/src" -name '*.
 echo "== dex (dx, min-sdk 19) =="
 "$BT/dx" --dex --min-sdk-version=19 --output="$OUT/classes.dex" "$OUT/classes"
 
-echo "== package manifest =="
-"$BT/aapt" package -f -M "$APP/AndroidManifest.xml" -I "$AJ" -F "$OUT/base.apk"
+echo "== package manifest (version $("$ROOT/tools/version.sh" name), code $("$ROOT/tools/version.sh" code)) =="
+sed -e "s/android:versionName=\"[^\"]*\"/android:versionName=\"$("$ROOT/tools/version.sh" name)\"/" \
+    -e "s/android:versionCode=\"[^\"]*\"/android:versionCode=\"$("$ROOT/tools/version.sh" code)\"/" \
+    "$APP/AndroidManifest.xml" > "$OUT/AndroidManifest.xml"
+"$BT/aapt" package -f -M "$OUT/AndroidManifest.xml" -I "$AJ" -F "$OUT/base.apk"
 ( cd "$OUT" && "$BT/aapt" add base.apk classes.dex >/dev/null )
 
 echo "== align =="

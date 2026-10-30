@@ -15,6 +15,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # test builds: 0.5.0-dev.<run>; releases: plain VERSION. versionCode always increases.
+      BWD_VERSION_SUFFIX: ${{ github.event_name == 'release' && '' || format('-dev.{0}', github.run_number) }}
+      BWD_VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
 
@@ -93,6 +97,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ github.event.release.tag_name }}"
+          [ "${TAG#v}" = "$(tr -d ' \n\r' < VERSION)" ] || { echo "::error::tag $TAG doesn't match VERSION $(cat VERSION)"; exit 1; }
           gh release upload "${{ github.event.release.tag_name }}" --clobber \
             dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip app/batterywatchdog.apk
 

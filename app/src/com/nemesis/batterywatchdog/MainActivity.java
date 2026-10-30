@@ -459,7 +459,7 @@ public class MainActivity extends Activity {
 
         // 2. resolve by name from the firmware's own interface definition.
         //    Skipped if this app version already searched this firmware and found nothing.
-        String missKey = fw + " " + APP_VERSION;
+        String missKey = fw + " " + appVersion();
         if (!missKey.equals(runRoot("cat " + STATE + "/resolve_miss 2>/dev/null").trim())) {
             StringBuilder lg = new StringBuilder();
             String r = resolveByName(lg);
@@ -485,7 +485,11 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.5";   // keep in step with AndroidManifest versionName
+    /** This build's version name (stamped into the manifest at build time). */
+    String appVersion() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+        catch (Exception e) { return "?"; }
+    }
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
@@ -602,7 +606,7 @@ public class MainActivity extends Activity {
     String buildDiagnostics() {
         StringBuilder d = new StringBuilder();
         d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
-        d.append("firmware: ").append(fw).append("\n");
+        d.append("app: ").append(appVersion()).append("   firmware: ").append(fw).append("\n");
         d.append("verification: ").append(verifyState).append(verifySource.length() > 0 ? " (" + verifySource + ")" : "")
             .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
         d.append("file writes: ").append(lastWriteMethod.length() > 0 ? lastWriteMethod : "(none yet)").append("\n");

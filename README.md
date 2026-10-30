@@ -249,6 +249,12 @@ Every push to `main` is built and tested by GitHub Actions
 ([`.github/workflows/build.yml`](.github/workflows/build.yml)) with the
 official Android SDK tools, and pushing a `v*` tag publishes a release.
 
+**Versions:** the `VERSION` file holds the next release's version (e.g.
+`0.5.0`). Builds from pushes are test builds, stamped `0.5.0-dev.<run>`;
+publishing a release tagged `v0.5.0` builds the plain `0.5.0`. The Android
+`versionCode` is the CI run number, so every build installs over the last.
+Bump `VERSION` once after each release, not for every test build.
+
 To build locally you need a JDK and an Android SDK with build-tools 30.0.3
 (the last version with `dx`, which the KitKat-based head unit needs) and
 platform 30:
