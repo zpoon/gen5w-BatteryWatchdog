@@ -57,14 +57,19 @@ service has functions that must never be called by accident
 `setValetModeOnOff`, `requestDiag`, `resetDrivingInfo`, charging and climate
 requests). So the numbers are never used blindly:
 
-1. **Resolved by name (app).** On launch the app finds the ODEX files that
-   mention `ITM_HSCANService` (`grep -l` over `/system/framework`,
-   `/system/app`, `/system/priv-app`, `/vendor/framework`), parses them with
-   `TxnResolver` (a Java port of hkmc-coldstart-heat's `dexodex.py`), and reads
+1. **Resolved by name (app).** On launch the app searches `/system/framework`,
+   `/system/app`, `/system/priv-app` and the vendor equivalents: first every
+   `.odex`/`.dex` file (streamed in 1 MiB chunks, parsed only if it contains
+   the Stub class), then `classes*.dex` inside `.jar`/`.apk` files for builds
+   that aren't odexed. It parses hits with `TxnResolver` (a Java port of
+   hkmc-coldstart-heat's `dexodex.py`), and reads
    the `TRANSACTION_getBatSoc`, `TRANSACTION_remainBatteryPercentage` and
    `TRANSACTION_getXEV_Bms_GDS_SOH` constants from
    `ITM_HSCANService$Stub`. It saves them to `txn` with the firmware id
    (`ro.build.version.incremental`). No binder calls are needed for this.
+   What it searched and found is in `resolve.log` (shown in Diagnostics under
+   "lookup by name"); a miss is remembered per firmware and app version
+   (`resolve_miss`) so the search doesn't repeat on every launch.
 2. **Hand-verified firmware (app and service).** `package/known_firmware.txt`,
    one line per build with its own numbers:
    `<ro.build.version.incremental> <soc> <hv> <soh>  # car, firmware`

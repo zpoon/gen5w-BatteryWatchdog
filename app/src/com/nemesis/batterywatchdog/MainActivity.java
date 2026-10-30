@@ -347,21 +347,16 @@ public class MainActivity extends Activity {
             return "manual-override".equals(verifySource) ? "override" : "saved";
         }
 
-        // 2. resolve by name from the firmware's own interface definition
-        String files = runRoot("grep -l 'ITM_HSCANService' /system/framework/*.odex /system/app/*.odex "
-                + "/system/priv-app/*.odex /vendor/framework/*.odex 2>/dev/null");
-        for (String path : files.split("\n")) {
-            path = path.trim();
-            if (path.length() == 0 || !path.startsWith("/")) continue;
-            Map<String, Integer> m = readTransactions(path);
-            Integer soc = m.get("getBatSoc");
-            if (soc == null) continue;
-            txSoc = soc;
-            Integer hv = m.get("remainBatteryPercentage"), soh = m.get("getXEV_Bms_GDS_SOH");
-            txHv = hv == null ? -1 : hv; txSoh = soh == null ? -1 : soh;
-            verifySource = path;
-            saveTxn(verifySource);
-            return "resolved";
+        // 2. resolve by name from the firmware's own interface definition.
+        //    Skipped if this app version already searched this firmware and found nothing.
+        String missKey = fw + " " + APP_VERSION;
+        if (!missKey.equals(runRoot("cat " + STATE + "/resolve_miss 2>/dev/null").trim())) {
+            StringBuilder lg = new StringBuilder();
+            String r = resolveByName(lg);
+            runRoot("mkdir -p " + STATE);
+            writeStateFile("resolve.log", lg.toString());
+            if (r != null) { verifySource = r; saveTxn(r); return "resolved"; }
+            writeStateFile("resolve_miss", missKey + "\n");
         }
 
         // 3. hand-verified firmware
@@ -380,21 +375,85 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    Map<String, Integer> readTransactions(String path) {
-        try {
-            return TxnResolver.transactions(new File(path), TxnResolver.STUB);
-        } catch (Exception e) {
-            // not readable by this app's uid: copy it via root into the app's cache first
+    static final String APP_VERSION = "0.5.0";
+    static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
+            "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
+    static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
+
+    /**
+     * Finds ITM_HSCANService$Stub in the firmware and reads its transaction codes.
+     * Pass 1: .odex/.dex files, searched in 1 MiB chunks, parsed only on a hit.
+     * Pass 2: classes*.dex inside .jar/.apk (builds that aren't odexed).
+     * Returns the source path, or null. Everything it tries goes into {@code lg}.
+     */
+    String resolveByName(StringBuilder lg) {
+        java.util.List<File> plain = new java.util.ArrayList<File>(), zips = new java.util.ArrayList<File>();
+        for (String dname : SEARCH_DIRS) collect(new File(dname), plain, zips, 2);
+        lg.append("searched ").append(plain.size()).append(" odex/dex and ").append(zips.size()).append(" jar/apk files\n");
+        for (File f : plain) {
             try {
-                File tmp = new File(getCacheDir(), "resolve.odex");
-                runRoot("cat '" + path + "' > '" + tmp.getAbsolutePath() + "' && chmod 644 '" + tmp.getAbsolutePath() + "'");
-                Map<String, Integer> m = TxnResolver.transactions(tmp, TxnResolver.STUB);
-                tmp.delete();
-                return m;
-            } catch (Exception e2) {
-                return new HashMap<String, Integer>();
+                boolean hit;
+                try { hit = TxnResolver.fileContains(f, NEEDLE); }
+                catch (java.io.IOException e) { File c = viaRoot(f); hit = c != null && TxnResolver.fileContains(c, NEEDLE); if (!hit && c != null) c.delete(); }
+                if (!hit) continue;
+                lg.append("found Stub in ").append(f).append("\n");
+                Map<String, Integer> m;
+                try { m = TxnResolver.transactions(f, TxnResolver.STUB); }
+                catch (java.io.IOException e) { File c = viaRoot(f); m = TxnResolver.transactions(c, TxnResolver.STUB); c.delete(); }
+                lg.append("  ").append(m.size()).append(" transactions; getBatSoc=").append(m.get("getBatSoc")).append("\n");
+                if (useMap(m)) return f.getPath();
+            } catch (Throwable t) {
+                lg.append("  ").append(f).append(": ").append(t).append("\n");
             }
         }
+        for (File f : zips) {
+            try {
+                Map<String, Integer> m = TxnResolver.transactionsInZip(f, TxnResolver.STUB, NEEDLE);
+                if (m.isEmpty()) continue;
+                lg.append("found Stub in ").append(f).append(": ").append(m.size()).append(" transactions; getBatSoc=").append(m.get("getBatSoc")).append("\n");
+                if (useMap(m)) return f.getPath();
+            } catch (Throwable t) {
+                lg.append("  ").append(f).append(": ").append(t).append("\n");
+            }
+        }
+        lg.append("not found\n");
+        return null;
+    }
+
+    boolean useMap(Map<String, Integer> m) {
+        Integer soc = m.get("getBatSoc");
+        if (soc == null) return false;
+        Integer hv = m.get("remainBatteryPercentage"), soh = m.get("getXEV_Bms_GDS_SOH");
+        txSoc = soc; txHv = hv == null ? -1 : hv; txSoh = soh == null ? -1 : soh;
+        return true;
+    }
+
+    static void collect(File dir, java.util.List<File> plain, java.util.List<File> zips, int depth) {
+        File[] l = dir.listFiles();
+        if (l == null) return;
+        for (File f : l) {
+            String n = f.getName().toLowerCase(Locale.US);
+            if (f.isDirectory()) { if (depth > 1) collect(f, plain, zips, depth - 1); }
+            else if (n.endsWith(".odex") || n.endsWith(".dex")) plain.add(f);
+            else if (n.endsWith(".jar") || n.endsWith(".apk")) zips.add(f);
+        }
+    }
+
+    /** Copy a file this app can't read into its cache via root; null on failure. */
+    File viaRoot(File f) {
+        File tmp = new File(getCacheDir(), "resolve.bin");
+        runRoot("cat '" + f.getPath() + "' > '" + tmp.getAbsolutePath() + "' && chmod 644 '" + tmp.getAbsolutePath() + "'");
+        return tmp.length() > 0 ? tmp : null;
+    }
+
+    void writeStateFile(String name, String content) {
+        try {
+            File tmp = new File(getCacheDir(), name);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
+            try { out.write(content.getBytes("UTF-8")); } finally { out.close(); }
+            runRoot("cat '" + tmp.getAbsolutePath() + "' > " + STATE + "/" + name);
+            tmp.delete();
+        } catch (Exception e) { /* best effort */ }
     }
 
     void saveTxn(String source) {
@@ -441,7 +500,8 @@ public class MainActivity extends Activity {
         d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
         d.append("firmware: ").append(fw).append("\n");
         d.append("verification: ").append(verifyState).append(verifySource.length() > 0 ? " (" + verifySource + ")" : "")
-            .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n\n");
+            .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
+        d.append("lookup by name:\n").append(firstLines(runRoot("cat " + STATE + "/resolve.log 2>/dev/null"), 8)).append("\n");
         // newest log lines first, so the latest error is at the top
         String log = runRoot("cat " + SVC_LOG + " 2>&1");
         if (log.trim().length() == 0 || log.contains("No such file"))
