@@ -86,12 +86,12 @@ The **Battery Watchdog** app is laid out for the 1920×720 Gen5W screen, in
 three columns with no page scrolling:
 
 - **Left:** the latest 12V % (green, or amber below the warning level), the
-  current warning, a color-coded **HV battery health (SOH)** box, and **Read sensor now**, which shows the live
-  `getBatSoc` value and its raw reply.
+  current warning, and a color-coded **HV battery health (SOH)** box.
 - **Middle:** a full-height chart of recent samples. Dots mark the start of
   each drive, and the amber line is the warning level.
-- **Right:** warning settings. Sampling interval, decode, scale and **Clear
-  history** sit under **Advanced**.
+- **Right:** warning settings. Under **Advanced**: sampling interval, decode,
+  scale, **Read sensor now** (live `getBatSoc` value and raw reply),
+  **Diagnostics**, **Restart monitor**, **Test run (10 s)** and **Clear history**.
 
 The screen refreshes every 30 s while it's open. Settings take effect on the
 next start of the car.

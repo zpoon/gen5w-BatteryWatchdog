@@ -73,40 +73,48 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         // ---- left: status --------------------------------------------------
+        // Compact so the SOH box always fits on the 720 px-tall screen; the
+        // column also scrolls on its own as a fallback. The read-sensor button
+        // lives under Advanced now.
         LinearLayout left = column();
-        left.addView(title("Battery Watchdog"));
+        left.setPadding(0, 0, dp(12), 0);
+        TextView t = title("Battery Watchdog");
+        t.setTextSize(20);
+        t.setPadding(0, 0, 0, dp(2));
+        left.addView(t);
         left.addView(hint("12V battery"));
         bigLabel = new TextView(this);
         bigLabel.setTextColor(Color.WHITE);
-        bigLabel.setTextSize(64);
+        bigLabel.setTextSize(52);
+        bigLabel.setIncludeFontPadding(false);
         left.addView(bigLabel);
         updLabel = hint("");
         left.addView(updLabel);
         warnLabel = new TextView(this);
         warnLabel.setTextColor(AMBER);
-        warnLabel.setTextSize(18);
-        warnLabel.setPadding(0, dp(6), 0, dp(10));
+        warnLabel.setTextSize(16);
+        warnLabel.setPadding(0, dp(2), 0, dp(6));
         left.addView(warnLabel);
         sohLabel = hint("");
+        sohLabel.setVisibility(View.GONE);
         left.addView(sohLabel);
         // HV battery health box: read live, not logged or monitored
         sohBox = new LinearLayout(this);
         sohBox.setOrientation(LinearLayout.VERTICAL);
-        sohBox.setPadding(dp(14), dp(10), dp(14), dp(10));
+        sohBox.setPadding(dp(14), dp(8), dp(14), dp(10));
         sohTitle = new TextView(this);
         sohTitle.setText("HV battery health (SOH)");
         sohTitle.setTextSize(14);
         sohBox.addView(sohTitle);
         sohValue = new TextView(this);
-        sohValue.setTextSize(30);
+        sohValue.setTextSize(26);
+        sohValue.setIncludeFontPadding(false);
         sohBox.addView(sohValue);
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        sp.setMargins(0, dp(8), dp(12), 0);
+        sp.setMargins(0, dp(4), 0, dp(4));
         left.addView(sohBox, sp);
-        left.addView(spacer());
-        left.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
-        rawLabel = hint("");
-        left.addView(rawLabel);
+        ScrollView leftScroll = new ScrollView(this);
+        leftScroll.addView(left);
 
         // ---- middle: chart -------------------------------------------------
         LinearLayout mid = column();
@@ -145,6 +153,9 @@ public class MainActivity extends Activity {
         advBox.addView(decBtn);
         scaleBtn = button("", new View.OnClickListener() { public void onClick(View v) { scaleX10 = scaleX10 == 10 ? 5 : 10; refreshButtons(); } });
         advBox.addView(scaleBtn);
+        advBox.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
+        rawLabel = hint("");
+        advBox.addView(rawLabel);
         advBox.addView(button("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
         advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
         advBox.addView(button("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }));
@@ -154,7 +165,7 @@ public class MainActivity extends Activity {
         right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
         right.addView(hint("Applies on the next start of the car."));
 
-        root.addView(left, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
+        root.addView(leftScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
         root.addView(mid, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
         root.addView(rightScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
 
@@ -183,8 +194,10 @@ public class MainActivity extends Activity {
         else if (state.length() == 0) bigLabel.setText("Waiting…");
         else bigLabel.setText("No reading");
         updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0))
-                : "No reading from the monitor service yet. If this lasts more than a minute, open Advanced \u2192 Diagnostics.");
-        sohLabel.setText("no_reading".equals(state) ? "The 12V value couldn't be decoded. Check Advanced settings." : "");
+                : "No reading yet. If this lasts, see Advanced \u2192 Diagnostics.");
+        boolean noRead = "no_reading".equals(state);
+        sohLabel.setText(noRead ? "The 12V value couldn't be decoded. Check Advanced settings." : "");
+        sohLabel.setVisibility(noRead ? View.VISIBLE : View.GONE);
         int sohNow = readSoh();
         if (sohNow < 0) sohNow = parse(soh, -1);   // fall back to the service's last value
         showSoh(sohNow);
