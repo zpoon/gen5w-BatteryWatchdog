@@ -94,10 +94,9 @@ public class MainActivity extends Activity {
         t.setTextSize(20);
         t.setPadding(0, 0, 0, dp(2));
         left.addView(t);
-        left.addView(hint("12V battery"));
         bigLabel = new TextView(this);
         bigLabel.setTextColor(Color.WHITE);
-        bigLabel.setTextSize(52);
+        bigLabel.setTextSize(48);
         bigLabel.setIncludeFontPadding(false);
         left.addView(bigLabel);
         updLabel = hint("");
@@ -126,16 +125,18 @@ public class MainActivity extends Activity {
         sohTitle.setTextSize(14);
         sohBox.addView(sohTitle);
         sohValue = new TextView(this);
-        sohValue.setTextSize(26);
+        sohValue.setTextSize(22);
         sohValue.setIncludeFontPadding(false);
         sohBox.addView(sohValue);
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         sp.setMargins(0, dp(4), 0, dp(4));
         left.addView(sohBox, sp);
-        left.addView(section("Last 7 days"));
+        TextView sumHead = section("Last 7 days");
+        sumHead.setPadding(0, dp(8), 0, dp(2));
+        left.addView(sumHead);
         sumLabel = new TextView(this);
         sumLabel.setTextColor(Color.WHITE);
-        sumLabel.setTextSize(15);
+        sumLabel.setTextSize(14);
         left.addView(sumLabel);
         ScrollView leftScroll = new ScrollView(this);
         leftScroll.addView(left);
@@ -274,7 +275,7 @@ public class MainActivity extends Activity {
         }
         else if (state.length() == 0) bigLabel.setText("Waiting…");
         else bigLabel.setText("No reading");
-        updLabel.setText(upd.length() > 0 ? "Updated " + time(parse(upd, 0))
+        updLabel.setText(upd.length() > 0 ? "12V battery \u00B7 updated " + time(parse(upd, 0))
                 : "No reading yet. If this lasts, see Advanced \u2192 Diagnostics.");
         // parked time before this drive, and how the 12V changed meanwhile
         int pMin = parse(kv(status, "parked_min"), -1);
@@ -305,8 +306,9 @@ public class MainActivity extends Activity {
         int sohNow = readSoh();
         if (sohNow < 0) sohNow = parse(soh, -1);   // fall back to the service's last value
         showSoh(sohNow);
-        warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "No warnings");
-        warnLabel.setTextColor(warn.length() > 0 ? AMBER : MUTED);
+        warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "");
+        warnLabel.setTextColor(AMBER);
+        warnLabel.setVisibility(warn.length() > 0 ? View.VISIBLE : View.GONE);
 
         List<long[]> drives = loadDrives(status);
         chart.setData(drives.size() > 30 ? drives.subList(drives.size() - 30, drives.size()) : drives, warnPct * 10, dropPct * 10);
@@ -483,7 +485,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.2";   // keep in step with AndroidManifest versionName
+    static final String APP_VERSION = "0.5.3";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
