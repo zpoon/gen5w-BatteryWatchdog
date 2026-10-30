@@ -6,6 +6,8 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write   # only used to attach files to a release on v* tags
@@ -86,12 +88,20 @@ jobs:
             dist/probe-12v-USB.zip
             app/batterywatchdog.apk
 
-      - name: Attach to release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Attach files to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" --clobber \
+            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip app/batterywatchdog.apk
+
+      - name: Attach to release (tag pushes)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --generate-notes \
-            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip dist/probe-12v-USB.zip app/batterywatchdog.apk \
+            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip app/batterywatchdog.apk \
           || gh release upload "$GITHUB_REF_NAME" --clobber \
-            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip dist/probe-12v-USB.zip app/batterywatchdog.apk
+            dist/gen5w-BatteryWatchdog-USB.zip dist/battery.watchdog.zip app/batterywatchdog.apk
