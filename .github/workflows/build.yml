@@ -39,9 +39,13 @@ jobs:
       - name: Get mksh R43 (the exact shell on the 2023 Ioniq 5 head unit)
         run: |
           # Debian's 2013 build of mksh R43, from snapshot.debian.org
-          BASE=https://snapshot.debian.org/archive/debian/20130401T000000Z/pool/main/m/mksh/
-          DEB=$(curl -fsSL "$BASE" | grep -oE 'mksh_43[^"]*_amd64\.deb' | head -n 1)
-          [ -n "$DEB" ] || { echo "::error title=mksh R43::no R43 amd64 .deb found at $BASE"; curl -fsSL "$BASE" | grep -oE 'mksh_[^"]*\.deb' | sort -u | head -n 9 | while read -r l; do echo "::error title=available::$l"; done; exit 1; }
+          DEB=""
+          for D in 20130301T000000Z 20130401T000000Z 20130501T000000Z 20130215T000000Z; do
+            BASE=https://snapshot.debian.org/archive/debian/$D/pool/main/m/mksh/
+            DEB=$(curl -fsSL "$BASE" | grep -oE 'mksh_43[^"]*_amd64\.deb' | head -n 1)
+            [ -n "$DEB" ] && break
+          done
+          [ -n "$DEB" ] || { echo "::error title=mksh R43::no R43 amd64 .deb found at $BASE"; curl -fsSL "$BASE" | grep -oE 'mksh_[^"]*_amd64\.deb' | sort -u | head -n 9 | while read -r l; do echo "::error title=available::$l"; done; exit 1; }
           curl -fsSL -o /tmp/mksh43.deb "$BASE$DEB"
           dpkg-deb -x /tmp/mksh43.deb /tmp/mksh43
           M=$(ls /tmp/mksh43/bin/mksh /tmp/mksh43/usr/bin/mksh 2>/dev/null | head -n 1)
