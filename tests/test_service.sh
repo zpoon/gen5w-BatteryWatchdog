@@ -114,12 +114,16 @@ temp_case() {   # temp_case <name> <datc file content or ''> <logcat content> <w
     grep -q "^temp_src=$5\$" "$T/state/status" || fail "$1: temp_src should be $5"
     rm -rf "$T"; echo "  $1: ok"
 }
-temp_case "G climate dump, Celsius key" "  mOutTempC = 4" "" 4 climate
-temp_case "H climate dump, raw sensor" "OutTempSnsr: 0x64" "" 10 climate
+temp_case "G climate dump as on the car: C invalid, F raw 0x6e = 68F" "  OutTempC : 0xff
+  OutTempF : 0x6e" "" 20 climate
+temp_case "H climate dump, C raw 0x76 = 18C preferred over F" "OutTempC : 0x76
+OutTempF : 0x6e" "" 18 climate
 temp_case "I UI log in Fahrenheit" "" "10-30 08:00:00.000 D/Climate( 99): setOutsideTempUIAdvanced::temp = 50 F" 10 ui_log
-temp_case "J unlabelled dump value ignored, ECO log used" "OutTemp = 77" '{"outTemperature":-3}' -3 eco_log
-temp_case "K multi-line dump, second line labelled" "OutTemp = 77
-  OutTempF: 41 *glob* chars" "" 5 climate
+temp_case "J both raw values invalid, ECO log used" "OutTempC : 0xff
+OutTempF : 0xfe" '{"outTemperature":-3}' -3 eco_log
+temp_case "K decimal or unknown keys ignored" "OutTemp = 77 *glob*
+OutTempF : 41
+OutTempSnsr : 0x64" '{"outTemperature":5}' 5 eco_log
 temp_case "L newest ECO line wins" "" '{"outTemperature":1}
 {"outTemperature":7}' 7 eco_log
 

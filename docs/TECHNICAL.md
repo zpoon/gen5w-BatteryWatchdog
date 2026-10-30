@@ -18,11 +18,14 @@ All reads are getters on the telematics service `tm_hscan_service`
 Outside temperature (context only, never used for decisions) is tried from,
 in order:
 
-1. `dumpsys com.hkmc.micom.datc`, lines containing `OutTemp`.
-   egmp-aa-ev-feat confirms the outside temperature is in this dump, but its
-   format isn't documented, so only clearly-labelled values are used: a key
-   ending in C or F, or a raw sensor value (raw × 0.5 − 40 °C, Hyundai's own
-   decode). Unlabelled numbers are ignored. Diagnostics shows the lines it saw.
+1. `dumpsys com.hkmc.micom.datc`. On the reference car it shows the raw CAN
+   values in hex, for example `OutTempC : 0xff` and `OutTempF : 0x6e`. They're
+   decoded with Hyundai's DATC signal definitions from
+   [commaai/opendbc](https://github.com/commaai/opendbc):
+   `CR_Datc_OutTempC` = 0.5 × raw − 41 °C and `CR_Datc_OutTempF` = raw − 42 °F,
+   so `0x6e` = 68 °F. `0xfe`/`0xff` mean not available (the C value is
+   `0xff` when the display is set to °F). Only those two keys with hex values
+   are used, and only within −45…55 °C. Diagnostics shows the lines.
 2. The telematics ECO JSON `"outTemperature"` in logcat (whole °C), as
    [hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat).
 3. The UI log line `setOutsideTempUIAdvanced::temp = N` (°F), coldstart-heat's
@@ -67,6 +70,7 @@ requests). So the numbers are never used blindly:
    `TRANSACTION_getXEV_Bms_GDS_SOH` constants from
    `ITM_HSCANService$Stub`. It saves them to `txn` with the firmware id
    (`ro.build.version.incremental`). No binder calls are needed for this.
+   On 260507 the definition is in `/system/framework/com.hkmc.ext.hcan.odex`.
    What it searched and found is in `resolve.log` (shown in Diagnostics under
    "lookup by name"); a miss is remembered per firmware and app version
    (`resolve_miss`) so the search doesn't repeat on every launch.

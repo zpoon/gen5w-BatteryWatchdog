@@ -344,7 +344,7 @@ public class MainActivity extends Activity {
         if (fw.length() > 0 && fw.equals(kv(saved, "fw")) && parse(kv(saved, "soc"), -1) > 0) {
             txSoc = parse(kv(saved, "soc"), -1); txHv = parse(kv(saved, "hv"), -1); txSoh = parse(kv(saved, "soh"), -1);
             verifySource = kv(saved, "source");
-            return "manual-override".equals(verifySource) ? "override" : "saved";
+            return "manual-override".equals(verifySource) ? "override" : "resolved (saved earlier)";
         }
 
         // 2. resolve by name from the firmware's own interface definition.
@@ -375,7 +375,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.0";
+    static final String APP_VERSION = "0.5.0";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
@@ -447,13 +447,7 @@ public class MainActivity extends Activity {
     }
 
     void writeStateFile(String name, String content) {
-        try {
-            File tmp = new File(getCacheDir(), name);
-            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
-            try { out.write(content.getBytes("UTF-8")); } finally { out.close(); }
-            runRoot("cat '" + tmp.getAbsolutePath() + "' > " + STATE + "/" + name);
-            tmp.delete();
-        } catch (Exception e) { /* best effort */ }
+        writeRoot(STATE + "/" + name, content);
     }
 
     void saveTxn(String source) {
@@ -672,16 +666,8 @@ public class MainActivity extends Activity {
     }
 
     String writeToUsb(String name, String content, String dir) {
-        try {
-            File tmp = new File(getCacheDir(), name);
-            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
-            try { out.write(content.getBytes("UTF-8")); } finally { out.close(); }
-            String r = runRoot("cat '" + tmp.getAbsolutePath() + "' > '" + dir + "/" + name + "' && echo ok").trim();
-            tmp.delete();
-            return r.endsWith("ok") ? "" : name + ": " + r + "\n";
-        } catch (Exception e) {
-            return name + ": " + e.getMessage() + "\n";
-        }
+        String r = writeRoot(dir + "/" + name, content);
+        return r.length() == 0 ? "" : name + ": " + r + "\n";
     }
 
     static String fmtSigned10(int v) { return (v > 0 ? "+" : v < 0 ? "-" : "") + fmt10(Math.abs(v)); }
@@ -706,6 +692,41 @@ public class MainActivity extends Activity {
             return "ERR " + e.getMessage();
         }
         return out.toString();
+    }
+
+    /**
+     * Writes {@code content} to {@code path} as root. The text is passed on the
+     * root shell's stdin (`cat > path`), not through a file in the app's cache:
+     * on the head unit the root shell couldn't read the app's cache (resolve.log
+     * never appeared). Falls back to appending chunks with echo if stdin isn't
+     * forwarded. Returns "" on success, otherwise an error text.
+     */
+    String writeRoot(String path, String content) {
+        String q = "'" + path.replace("'", "'\\''") + "'";
+        try {
+            Process p = Runtime.getRuntime().exec(new String[] { NEM, "root", "-c", "cat > " + q });
+            java.io.OutputStream o = p.getOutputStream();
+            o.write(content.getBytes("UTF-8"));
+            o.close();
+            p.waitFor();
+        } catch (Exception e) { /* fall through to the check */ }
+        if (sameContent(path, content)) return "";
+        // fallback: echo line by line, a few KB per root call
+        runRoot(": > " + q);
+        StringBuilder cmd = new StringBuilder();
+        for (String line : content.split("\n", -1)) {
+            cmd.append("echo '").append(line.replace("'", "'\\''")).append("' >> ").append(q).append("; ");
+            if (cmd.length() > 8000) { runRoot(cmd.toString()); cmd.setLength(0); }
+        }
+        if (cmd.length() > 0) runRoot(cmd.toString());
+        return sameContent(path, content) ? "" : "couldn't write " + path;
+    }
+
+    boolean sameContent(String path, String content) {
+        String back = runRoot("cat '" + path.replace("'", "'\\''") + "' 2>/dev/null");
+        // runRoot normalises line endings to \n and adds a trailing one
+        String a = back.trim(), b = content.trim();
+        return a.equals(b);
     }
 
     int readInt(String name, int def) {

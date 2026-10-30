@@ -136,38 +136,43 @@ decode() {   # RAW -> tenths of a percent, or -1
 # ---- outside temperature (context only; never used for decisions) ------------
 # Sets TEMP_C (whole deg C) and TEMP_SRC, or leaves TEMP_C empty. TEMP_LINE keeps
 # the climate-dump line it looked at, for Diagnostics. Sources, in order:
-#   1. dumpsys of the climate service (egmp-aa-ev-feat: outside temp is in it);
-#      the format isn't documented, so only clearly-labelled values are used:
-#      a key ending in C / F, or a raw sensor value (raw x 0.5 - 40 C)
+#   1. dumpsys of the climate service: OutTempC / OutTempF raw CAN values,
+#      decoded as below
 #   2. telematics ECO JSON "outTemperature" in logcat (deg C), as coldstart-heat
 #   3. UI log "setOutsideTempUIAdvanced::temp = N" (deg F), coldstart-heat's fallback
 TEMP_SRC=""; TEMP_LINE=""
 trim() { _t=$1; while :; do case "$_t" in ' '*) _t=${_t# };; *' ') _t=${_t% };; *) break;; esac; done; echo "$_t"; }
-in_range_c() { [ "$1" -ge -50 ] 2>/dev/null && [ "$1" -le 60 ]; }
+in_range_c() { [ "$1" -ge -45 ] 2>/dev/null && [ "$1" -le 55 ]; }   # believable outdoor range
 
+# The climate dump shows the raw CAN values in hex, e.g. on a 2023 Ioniq 5:
+#     OutTempC : 0xff      (0xff = not available)
+#     OutTempF : 0x6e
+# Decoded with Hyundai's DATC signal definitions (commaai/opendbc,
+# hyundai_kia_generic: CR_Datc_OutTempC 0.5 x raw - 41 C, CR_Datc_OutTempF
+# raw - 42 F). Only these two exact keys with hex values are used; 0xfe/0xff
+# mean "not available". C is preferred (half-degree resolution).
 temp_from_datc() {
     _out=$($DUMPSYS com.hkmc.micom.datc 2>/dev/null | grep -i 'outtemp')
-    _found=1
+    _tc=""; _tf=""
     lines_on
     for _x in $_out; do
         [ -n "$TEMP_LINE" ] || TEMP_LINE=$_x
-        case "$_x" in *=*|*:*) ;; *) continue;; esac
-        _k=$(trim "${_x%%[=:]*}"); _v=$(trim "${_x#*[=:]}"); _v=${_v%% *}
-        case "$_v" in
-            0x*|0X*) _n=$(hex2dec "${_v#0[xX]}");;
-            *) _n=${_v%%[!0-9-]*};;
-        esac
-        case "$_n" in ''|-|*[!0-9-]*) continue;; esac
+        case "$_x" in *:*) ;; *) continue;; esac
+        _k=$(trim "${_x%%:*}"); _v=$(trim "${_x#*:}"); _v=${_v%% *}
+        case "$_v" in 0x*|0X*) ;; *) continue;; esac
+        _n=$(hex2dec "${_v#0[xX]}")
+        case "$_n" in ''|-*|*[!0-9]*) continue;; esac
+        [ "$_n" -ge 254 ] && continue
         case "$_k" in
-            *[Rr]aw*|*[Ss]nsr*|*SNSR*) _c=$(( _n / 2 - 40 ));;
-            *[Cc]elsius*|*_C|*_c|*TempC|*tempC|*TEMPC) _c=$_n;;
-            *[Ff]ahrenheit*|*_F|*_f|*TempF|*tempF|*TEMPF) _c=$(( (_n - 32) * 5 / 9 ));;
-            *) continue;;
+            OutTempC) _tc=$(( _n / 2 - 41 ));;
+            OutTempF) _tf=$(( (_n - 42 - 32) * 5 / 9 ));;
         esac
-        if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=climate; _found=0; break; fi
     done
     lines_off
-    return $_found
+    for _c in $_tc $_tf; do
+        if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=climate; return 0; fi
+    done
+    return 1
 }
 
 temp_from_logcat() {
