@@ -27,13 +27,13 @@ public class ResolverTest {
         if (!m.equals(m2)) throw new AssertionError("odex result differs: " + m2);
         // streaming search and the file-based parser on an ODEX written to disk
         byte[] needle = "tm_interface/ITM_HSCANService$Stub;".getBytes();
-        File of = File.createTempFile("fx", ".odex");
+        File of = File.createTempFile("bwdfixture", ".odex");
         Files.write(of.toPath(), odex);
         if (!TxnResolver.fileContains(of, needle)) throw new AssertionError("fileContains missed the Stub");
         if (TxnResolver.fileContains(of, "no/such/Class;".getBytes())) throw new AssertionError("fileContains false hit");
         if (!m.equals(TxnResolver.transactions(of, TxnResolver.STUB))) throw new AssertionError("file parse differs");
         // the same dex as classes.dex inside an APK/JAR
-        File zf = File.createTempFile("fx", ".apk");
+        File zf = File.createTempFile("bwdfixture", ".apk");
         java.util.zip.ZipOutputStream zo = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(zf));
         zo.putNextEntry(new java.util.zip.ZipEntry("AndroidManifest.xml")); zo.write(new byte[] { 1, 2, 3 }); zo.closeEntry();
         zo.putNextEntry(new java.util.zip.ZipEntry("classes.dex")); zo.write(dex); zo.closeEntry();
