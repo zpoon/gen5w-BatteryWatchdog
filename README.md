@@ -34,6 +34,9 @@ on every drive and tells you when something looks wrong.
 - **History chart** of recent readings, with the start of each drive marked.
 - **Built-in diagnostics** for troubleshooting.
 
+It's an early-warning aid, not a battery tester: see
+[What it can and can't detect](#what-it-can-and-cant-detect).
+
 All data stays on the head unit.
 
 ## Compatibility
@@ -116,6 +119,45 @@ instrument cluster.
   so a reading that **rose** while parked is normal.
 - Cold lowers 12V readings. A drop on a freezing night is less worrying than
   the same drop on a mild one.
+
+## What it can and can't detect
+
+Battery Watchdog is an early-warning aid, not a battery tester. It only runs
+while the head unit is awake, so it sees the 12V at the start and end of each
+drive, but nothing while the car is parked. It reads the car's battery-sensor
+charge estimate; the head unit doesn't expose the 12V voltage.
+
+**Likely to catch:**
+
+- **The 12V not being charged while driving**, for example a failing ICCU (the
+  unit that charges the 12V on E-GMP cars). The 12V should hold or rise while
+  the car is on, so a drive of 20+ minutes that ends lower is flagged. This is
+  observed directly, while the head unit is on.
+- **A large drain while parked**, such as a module that doesn't sleep or an
+  accessory left on, if it's big enough to show up between drives.
+- **A low 12V when you start the car.**
+
+**Unlikely to catch:**
+
+- **A slowly weakening battery.** Aging mainly shows as lower voltage and
+  higher internal resistance, which aren't available here. The charge estimate
+  can look normal until late.
+- **Drains the car hides by recharging.** While parked, the car tops up the 12V
+  from the main battery when it gets low. A battery that drains faster than it
+  should can still look fine before and after, because the dip and the top-up
+  happen while Battery Watchdog is asleep.
+- **Sudden failures**, such as an internal short.
+- **A battery that dies in one parking period.** If the car can't start, the
+  warning never appears. The protection comes from trends over earlier drives.
+
+**For full coverage**, pair it with a Bluetooth 12V battery monitor clamped to
+the battery terminals. These measure voltage continuously, including while
+parked, and report to a phone app. Keep paying attention to the car's own
+warnings, and have the 12V battery tested if you're unsure.
+
+The thresholds (60 % low, 15-point parked drop, 20-minute drive) are starting
+points, not values from Hyundai. Adjust them as you learn your car's normal
+pattern.
 
 ## Safety
 
