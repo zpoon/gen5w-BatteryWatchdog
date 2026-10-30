@@ -9,6 +9,8 @@ import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
+import android.database.ContentObserver;
+import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
 import android.widget.Button;
@@ -76,6 +78,7 @@ public class MainActivity extends Activity {
         loadConfig();
 
         LinearLayout root = new LinearLayout(this);
+        rootView = root;
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackgroundColor(BG);
         int pad = dp(16);
@@ -146,6 +149,7 @@ public class MainActivity extends Activity {
 
         // ---- right: settings -----------------------------------------------
         ScrollView rightScroll = new ScrollView(this);
+        rightCol = rightScroll;
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
         rightScroll.addView(right);
@@ -200,10 +204,49 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onResume() { super.onResume(); handler.removeCallbacks(tick); tick.run(); }
+    protected void onResume() {
+        super.onResume();
+        try {
+            getContentResolver().registerContentObserver(Settings.System.getUriFor(SPLIT_SETTING), false, splitObserver);
+            splitObserved = true;
+        } catch (Exception e) { splitObserved = false; }
+        applySplit();
+        handler.removeCallbacks(tick); tick.run();
+    }
 
     @Override
-    protected void onPause() { super.onPause(); handler.removeCallbacks(tick); }
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(tick);
+        if (splitObserved) { getContentResolver().unregisterContentObserver(splitObserver); splitObserved = false; }
+    }
+
+    // ---- split screen -----------------------------------------------------------
+    // Hyundai's split view draws the map panel over the right of the screen without
+    // resizing this app. Settings.System "split_screen_status" is 1 while it's open
+    // (found by the Launchpad / gen5w-preconditioning project). The panel's width
+    // isn't reported (about 29 % in photos), so a third is kept clear, and the
+    // settings column is hidden; close the split view to change settings.
+    static final String SPLIT_SETTING = "split_screen_status";
+    LinearLayout rootView;
+    View rightCol;
+    boolean compact, splitObserved;
+    final ContentObserver splitObserver = new ContentObserver(handler) {
+        @Override public void onChange(boolean selfChange) { applySplit(); }
+    };
+
+    boolean splitOn() {
+        try { return Settings.System.getInt(getContentResolver(), SPLIT_SETTING, 0) == 1; }
+        catch (Exception e) { return false; }
+    }
+
+    void applySplit() {
+        compact = splitOn();
+        int pad = dp(16);
+        int right = compact ? Math.round(getResources().getDisplayMetrics().widthPixels / 3f) : pad;
+        rootView.setPadding(pad, pad, right, pad);
+        rightCol.setVisibility(compact ? View.GONE : View.VISIBLE);
+    }
 
     // ---- data ---------------------------------------------------------------
     void refreshData() {
@@ -440,7 +483,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.1";   // keep in step with AndroidManifest versionName
+    static final String APP_VERSION = "0.5.2";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();

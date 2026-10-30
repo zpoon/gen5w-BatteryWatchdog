@@ -94,6 +94,10 @@ The screen has three columns:
 A stop counts as a new drive only if the screen was off for 10 minutes or
 more, so quick stops don't clutter the history.
 
+With the head unit's **split view** open, the app keeps clear of the map
+panel on the right: the status column and graph stay visible and the
+settings column is hidden until the split view closes.
+
 | Setting | Default | What it does |
 |---|---|---|
 | Monitor | On | Turns background monitoring on or off |
@@ -280,6 +284,8 @@ docs/TECHNICAL.md        data sources, internals, porting notes
   research in [egmp-aa-ev-feat](https://github.com/willemcvu/egmp-aa-ev-feat).
 - Display wake detection is based on
   [hkmc-factory82](https://github.com/armandodollia/nemesis-package-builds).
+- The split-view signal (`Settings.System` `split_screen_status`) was found by
+  [Launchpad / gen5w-preconditioning](https://github.com/paytondevs/gen5w-preconditioning).
 
 ## License
 
