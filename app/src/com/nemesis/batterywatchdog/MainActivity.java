@@ -250,29 +250,35 @@ public class MainActivity extends Activity {
 
     void showDiagnostics() {
         StringBuilder d = new StringBuilder();
-        d.append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
-        d.append("shell: ").append(runRoot("echo $KSH_VERSION").trim()).append("\n");
-        String chk = runRoot("/system/bin/sh -n " + SVC_SCRIPT + " 2>&1 && echo OK").trim();
-        d.append("script syntax check: ").append(chk.length() == 0 ? "(no output)" : chk).append("\n\n");
-        d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
-        d.append("display: ").append(runRoot("dumpsys power | grep -E 'mWakefulness=|mScreenOn=|policy=' 2>/dev/null").trim()).append("\n\n");
-        d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n\n");
-        d.append("status:\n").append(runRoot("cat " + STATE + "/status 2>&1").trim()).append("\n\n");
+        d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n\n");
+        // newest log lines first, so the latest error is at the top
         String log = runRoot("cat " + SVC_LOG + " 2>&1");
         if (log.trim().length() == 0 || log.contains("No such file"))
             log = runRoot(NEM + " log service " + SVC_ID + " 2>&1");
-        String[] lines = log.split("\n");
-        d.append("service log (last 25 lines):\n");
-        for (int i = Math.max(0, lines.length - 25); i < lines.length; i++) d.append(lines[i]).append("\n");
+        String[] lines = log.trim().split("\n");
+        d.append("service log, newest first:\n");
+        if (log.trim().length() == 0) d.append("(empty)\n");
+        for (int i = lines.length - 1, n = 0; i >= 0 && n < 15; i--, n++) d.append(lines[i]).append("\n");
+        d.append("\n");
+        d.append("shell: ").append(runRoot("echo $KSH_VERSION").trim()).append("\n");
+        String chk = runRoot("/system/bin/sh -n " + SVC_SCRIPT + " 2>&1 && echo OK").trim();
+        d.append("script syntax check: ").append(chk.length() == 0 ? "(no output)" : chk).append("\n");
+        d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
+        d.append("display: ").append(runRoot("dumpsys power | grep -E 'mWakefulness=|mScreenOn=|policy=' 2>/dev/null").trim()).append("\n\n");
+        d.append("status file:\n").append(runRoot("cat " + STATE + "/status 2>&1").trim()).append("\n\n");
+        d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n");
         new AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(d.toString())
             .setPositiveButton("Close", null).show();
     }
 
     void restartService() {
-        String r = runRoot(NEM + " service stop " + SVC_ID + " 2>&1; " + NEM + " service start " + SVC_ID + " 2>&1; "
+        // empty the old log first so anything shown afterwards is from this run
+        String r = runRoot(": > " + SVC_LOG + " 2>/dev/null; "
+                + NEM + " service stop " + SVC_ID + " 2>&1; "
+                + NEM + " service start " + SVC_ID + " 2>&1; sleep 3; "
                 + NEM + " service status " + SVC_ID + " 2>&1");
-        rawLabel.setText(r.trim());
-        toast("Monitor restarted");
+        rawLabel.setText("Restart: " + r.trim().replace("\n", "  |  "));
+        toast("Monitor restarted. Check Diagnostics in 30 seconds.");
     }
 
     void clearHistory() {
