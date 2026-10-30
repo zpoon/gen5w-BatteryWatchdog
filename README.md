@@ -9,6 +9,9 @@ On E-GMP cars like the Ioniq 5, a dead 12V battery means the car won't turn
 on, even with a full main battery. Battery Watchdog logs the 12V charge level
 on every drive and tells you when something looks wrong.
 
+![Battery Watchdog on a Gen5W head unit: 12V charge, parked drain, HV battery health, history chart and settings](docs/screenshot.png)
+<sub>Mockup of the app on the 1920×720 Gen5W screen, with sample data.</sub>
+
 > Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC. Use at your
 > own risk. Battery Watchdog only **reads** values from the car; it never
 > sends commands to it.
