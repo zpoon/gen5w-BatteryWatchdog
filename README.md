@@ -1,144 +1,180 @@
-# Battery Watchdog (battery.watchdog) — NEMESIS package for Gen5W
+# Battery Watchdog
 
-Logs the 12V battery's state of charge every time the car starts and every
-few minutes while it's on. It warns with the factory toast when:
+A [NEMESIS](#requirements) package for Hyundai, Kia and Genesis cars with the
+**Gen5W** head unit. It keeps an eye on the **12V battery** and warns you on
+the car's screen before a weak battery or a charging problem leaves you
+unable to start the car.
 
-- the 12V is **below a threshold** at startup (default 60 %)
-- it **dropped a lot while parked** since the end of the last drive (default 15+ points)
-- it **didn't recover during the last drive** (a drive of 20+ min that ended lower than it started)
+On E-GMP cars like the Ioniq 5, a dead 12V battery means the car won't turn
+on, even with a full main battery. Battery Watchdog logs the 12V charge level
+on every drive and tells you when something looks wrong.
 
-The aim is to catch a weak 12V battery or a failing ICCU/LDC before the car
-won't start.
+> Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC. Use at your
+> own risk. Battery Watchdog only **reads** values from the car; it never
+> sends commands to it.
 
-**Read-only.** The service only calls getters on the telematics hscan service.
-It never writes to the car.
+## Features
 
-> **Status: working on a 2023 Ioniq 5 SEL (firmware 260507) as of v0.2.7.**
-> Probe on a **2023 Ioniq 5 SEL (US), head-unit firmware 260507**, car on and parked:
->
-> | txn | getter | reply | meaning |
-> |---|---|---|---|
-> | 137 (0x89) | `getBatSoc` | int `0x53` = **83** | 12V SOC, 1 % per unit. Logcat: `TM_HSCANService engine : true/batSoc : 83` |
-> | 74 (0x4a) | `remainBatteryPercentage` | float `0x428d0000` = **70.5** | HV (traction) SOC, 0.5 % steps |
-> | 214 (0xd6) | SOH | int `0x64` = 100 | HV pack health index |
-> | 211 (0xd3) | BatPwrSum | 0 | not used |
->
-> 137 is an **integer** and is clearly a different battery from the 70.5 % HV
-> SOC, so the defaults are now decode = Integer, scale = 1 %. Values were steady
-> over 3 minutes. That's normal for a battery-sensor SOC, but it means the
-> "should rise after start" check hasn't been seen yet.
+- **12V charge level** at the start of every drive and every 5 minutes while
+  the screen is on.
+- **Warnings on the head unit screen** when:
+  - the 12V is **low** when you start the car (default: below 60 %),
+  - it **dropped a lot while parked** (default: 15 points or more),
+  - it **didn't recover during your last drive** (a drive of 20+ minutes that
+    ended lower than it started).
+- **Parked drain:** how long the car sat before this drive, how much the 12V
+  changed in that time, and the rate per day.
+- **Context:** main battery charge and outside temperature, since cold weather
+  lowers 12V readings.
+- **HV battery health (SOH)** in a color-coded box (display only).
+- **History chart** of recent readings, with the start of each drive marked.
+- **Built-in diagnostics** for troubleshooting.
 
-## Layout
+All data stays on the head unit.
 
-```
-research/probe-12v/     USB probe (type=execute): samples 0x89 / 0xd6 / 0x4a / 0xd3 for ~3 min
-package/                the NEMESIS package
-  NEMESIS.data          app + background service
-  svc/watchdog.sh         the monitor service (root, read-only)
-  scripts/post.sh       seeds default settings
-  app/batterywatchdog.apk        (built, copy here)
-app/                    settings / history app (Java, no resources, built with dx)
-tools/build_apk.sh      javac -> dx (DEX 035) -> aapt -> v1 sign   (from hkmc-coldstart-heat)
-tools/make_package.sh   package zip + USB install bundle            (from hkmc-coldstart-heat)
-```
+## Compatibility
 
-## 1. Verify the data source (do this first)
+| Car | Head-unit firmware | Status |
+|---|---|---|
+| 2023 Hyundai Ioniq 5 SEL (US) | 260507 | Working |
 
-1. Copy `research/probe-12v/NEMESIS.data` and `NEMESIS.sh` to the root of a USB drive.
-2. Car on, parked: insert the drive and approve. Leave it plugged in ~3 minutes.
-3. Open `PROBE-12V.txt`. Each `txn 137:` line looks like `Result: Parcel(00000000 XXXXXXXX ...)`:
-   - `XXXXXXXX` is a small number (e.g. `0000005a` = 90): it's an **int**. If it
-     matches the 12V % you'd expect, set decode = Integer, scale = 1 %. If it's
-     about double that, use scale = 0.5 %.
-   - It starts with `42…` / `41…` (e.g. `42b40000` = 90.0): it's a **float**. Set decode = Float.
-   - It's `00000000` every time, or the first word isn't `00000000`: this
-     firmware doesn't fill it. Don't install; the monitor would have nothing to show.
-4. If you can, compare against a known 12V reading (OBD scanner / Car Scanner
-   app). The value should go **up a few points** in the minutes after the car
-   turns on (the LDC starts charging). That's a good sign it's the 12V and not
-   something else.
+Other Gen5W cars may work if their firmware provides the same values. Run the
+probe described in [docs/TECHNICAL.md](docs/TECHNICAL.md#porting-to-another-car-or-firmware)
+to check, and please open an issue with the result so the table can grow.
 
-"Auto" decode treats anything ≥ `0x30000000` as a float and anything smaller as
-an int. That works for both cases, but it's better to set the type explicitly
-once the probe shows which it is.
+## Requirements
 
-## 2. Build
+- A Gen5W head unit with **NEMESIS** installed. NEMESIS is the community
+  package manager for these head units; this project doesn't install it.
+- A USB drive formatted FAT32 or exFAT.
 
-Every push to `main` is built by GitHub Actions (`.github/workflows/build.yml`)
-with the official Android SDK tools. Download the `gen5w-BatteryWatchdog-USB.zip`
-artifact from the run. Pushing a `v*` tag also attaches the files to a GitHub release.
+## Install
 
-To build locally:
+1. Download `gen5w-BatteryWatchdog-USB.zip` from the
+   [latest release](../../releases/latest).
+   (Development builds are attached to each run on the
+   [Actions](../../actions) page as a zip containing the same file.)
+2. Extract it to the **root** of the USB drive. You should see `NEMESIS.data`
+   and a `packages` folder at the top level.
+3. With the car on and **parked**, insert the drive and approve the install.
+4. Open **Battery Watchdog** from the app list. The first reading appears
+   within about a minute.
 
-Needs a JDK and an Android SDK with build-tools that still ship `dx` (e.g. 30.0.3).
+To update, install a newer version the same way, over the top. Settings and
+history are kept.
+
+## Using it
+
+The screen has three columns:
+
+- **Left:** the 12V charge (green, or amber below your warning level), how
+  long the car was parked and how the 12V changed meanwhile, main battery
+  charge, outside temperature, the latest warning, and the HV battery health
+  box.
+- **Middle:** recent readings. White dots mark the start of each drive and the
+  amber line is your warning level. A healthy pattern is a small dip at each
+  start and a recovery during the drive.
+- **Right:** settings.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Monitor | On | Turns background monitoring on or off |
+| Warn below | 60 % | Warn if the 12V is below this at the start of a drive |
+| Warn if it drops | 15 pts | Warn if it fell this much while parked |
+| Pop-up every start | Warnings only | Also show the reading on every start |
+| Advanced → Sample every | 5 min | How often to read while the screen is on |
+
+Tap **Save** after changing settings; they apply from the next drive.
+
+**HV battery health** colors: green 90 and above, amber 75–89, red below 75.
+It's the car's health index for the main battery pack (100 = new), not a
+capacity measurement, and it never triggers warnings.
+
+### How warnings appear
+
+When you start the car and the screen wakes up, Battery Watchdog takes a
+reading and compares it with the end of your previous drive. If a warning
+applies, it shows the car's own pop-up message over whatever is on screen,
+for example:
+
+> 12V dropped 16.0 pts while parked: 84.0% -> 68.0%, outside 34F
+
+Warnings also appear in amber in the app. Nothing is sent to your phone or the
+instrument cluster.
+
+### Reading the numbers
+
+- The 12V figure is the car's battery-sensor estimate, not a voltage. It can
+  jump after the car has slept or recalibrated, so watch the trend rather
+  than a single reading.
+- The car periodically recharges the 12V from the main battery while parked,
+  so a reading that **rose** while parked is normal.
+- Cold lowers 12V readings. A drop on a freezing night is less worrying than
+  the same drop on a mild one.
+
+## Troubleshooting
+
+The app shows **Waiting…** and no reading:
+
+1. Open **Advanced → Diagnostics**. The first line is the service status; it
+   should end in `running`. Below it, the service log is listed newest first.
+2. **Advanced → Test run (10 s)** runs the monitor once, directly. If it shows
+   a 12V reading and `exit code 0`, the monitor itself works and the problem
+   is with how NEMESIS is starting it.
+3. **Advanced → Restart monitor** stops and starts the background service.
+
+If Diagnostics or NEMESIS's own log shows `giving up on battery.watchdog/...`,
+see [docs/TECHNICAL.md](docs/TECHNICAL.md#nemesis-giving-up).
+
+When reporting a problem, include your car, model year, head-unit firmware
+and a photo of the top of Diagnostics.
+
+## Uninstall
+
+Remove `battery.watchdog` from the NEMESIS manager (or run
+`nemesis uninstall battery.watchdog`). Settings and history are stored in
+`/data/nemesis/state/battery.watchdog/` and may remain after uninstalling.
+
+## Building from source
+
+Every push to `main` is built and tested by GitHub Actions
+([`.github/workflows/build.yml`](.github/workflows/build.yml)) with the
+official Android SDK tools, and pushing a `v*` tag publishes a release.
+
+To build locally you need a JDK and an Android SDK with build-tools 30.0.3
+(the last version with `dx`, which the KitKat-based head unit needs) and
+platform 30:
 
 ```
 ANDROID_SDK=~/Android/Sdk tools/build_apk.sh
 cp app/batterywatchdog.apk package/app/batterywatchdog.apk
-tools/make_package.sh
+tools/make_package.sh            # -> dist/gen5w-BatteryWatchdog-USB.zip
+tests/test_service.sh            # service test with mocked car services
 ```
 
-Extract `dist/gen5w-BatteryWatchdog-USB.zip` to a FAT32/exFAT USB root and insert it in the car to install.
+Project layout:
 
-## 3. Use
-
-The **Battery Watchdog** app is laid out for the 1920×720 Gen5W screen, in
-three columns with no page scrolling:
-
-- **Left:** the latest 12V % (green, or amber below the warning level); how
-  long the car sat before this drive and how much the 12V changed meanwhile,
-  with a per-day rate; main battery charge and outside temperature; the
-  current warning; and a color-coded **HV battery health (SOH)** box.
-- **Middle:** a full-height chart of recent samples. Dots mark the start of
-  each drive, and the amber line is the warning level.
-- **Right:** warning settings. Under **Advanced**: sampling interval, decode,
-  scale, **Read sensor now** (live `getBatSoc` value and raw reply),
-  **Diagnostics**, **Restart monitor**, **Test run (10 s)** and **Clear history**.
-
-The screen refreshes every 30 s while it's open. Settings take effect on the
-next start of the car.
-
-State lives in `/data/nemesis/state/battery.watchdog/`:
-
-| file | contents |
-|---|---|
-| `log.csv` | `epoch,event(start/sample),raw_hex,pct10,soh_raw,hv10,temp_c` — rotates to `log.old.csv` at `max_lines` |
-| `sessions` | one line per finished drive: `start_epoch minutes start_pct10 end_pct10` |
-| `warnings` | every warning raised, timestamped |
-| `status` | latest state for the app |
-| `sess_start`, `last` | start and most recent sample of the current session |
-
-`pct10` is tenths of a percent (`725` = 72.5 %).
-
-## Notes / limits
-
-- Gen5W usually doesn't reboot between drives (QuickBoot/suspend), so the
-  service runs as `mode=restart` and starts a new session (one drive) when the
-  display wakes up, or when the wall clock jumps by `gap_s` (default 10 min)
-  because the unit was asleep. The "end" of a drive is the last sample, so it
-  can be up to `interval_s` before you turned the car off.
-- If NEMESIS's log shows `giving up on <package>/<service>`, it has stopped
-  launching that service after earlier crashes. On this car that persisted
-  across updates **and** a head-unit reboot. Renaming the service (here
-  `monitor` → `watch`) gave it a clean slate. Use **Advanced → Test run** to
-  check the script itself works outside NEMESIS.
-- Service output: `nemesis log service battery.watchdog/watch`, or the app's
-  **Advanced → Diagnostics**.
-- The IBS (battery sensor) SOC estimate can jump after the car sleeps or
-  re-learns. Treat a single odd reading as noise and watch the trend.
-- Main battery charge is `tm_hscan_service 74` (float, %). Outside temperature
-  is parsed from the telematics `"outTemperature"` JSON in logcat, as
-  hkmc-coldstart-heat does. Warnings append it, e.g. `…, outside 34F`.
-- SOH (`0xd6`) is the **HV pack's** health index (100 = new). The app reads it
-  live each refresh and colors the box green ≥ 90, amber 75–89, red < 75. It
-  isn't monitored and never triggers a warning.
-- Desktop test of the service script with mocked `service`/`am`:
-  `BWD_TEST=1 BWD_TEST_PATH=<mock bin> BWD_STATE=<tmp dir> sh package/svc/watchdog.sh`
+```
+package/                 the NEMESIS package
+  NEMESIS.data           app + background service (battery.watchdog/watch)
+  svc/watchdog.sh        the monitor (root, read-only)
+  scripts/post.sh        default settings; restarts the service after install
+app/                     the on-screen app (Java, no resources)
+research/probe-12v/      USB probe for checking a new car or firmware
+tests/                   service test with mocked car services
+tools/                   APK build and packaging scripts
+docs/TECHNICAL.md        data sources, internals, porting notes
+```
 
 ## Credits
 
-Build/packaging tools and the app's root-config pattern are adapted from
-[hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat) (MIT).
-The service names, transaction codes and toast broadcast come from
-[egmp-aa-ev-feat](https://github.com/willemcvu/egmp-aa-ev-feat).
-Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC.
+- Build and packaging tools, and the app's settings pattern, are adapted from
+  [hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat) (MIT).
+- Service names, transaction codes and the pop-up broadcast come from the
+  research in [egmp-aa-ev-feat](https://github.com/willemcvu/egmp-aa-ev-feat).
+- Display wake detection is based on
+  [hkmc-factory82](https://github.com/armandodollia/nemesis-package-builds).
+
+## License
+
+[MIT](LICENSE)
