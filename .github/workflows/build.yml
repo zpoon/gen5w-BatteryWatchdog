@@ -36,21 +36,24 @@ jobs:
             sh -n "$f"; mksh -n "$f"
           done
 
-      - name: Build mksh R43 (the exact shell on the 2023 Ioniq 5 head unit)
+      - name: Get mksh R43 (the exact shell on the 2023 Ioniq 5 head unit)
         run: |
-          git clone -q --depth 1 --branch mksh-R43 https://github.com/MirBSD/mksh.git /tmp/mksh-r43
-          cd /tmp/mksh-r43
-          export CFLAGS="-O1 -w -std=gnu99 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types"
-          sh ./Build.sh -r > build.log 2>&1 \
-            || { grep -vE '^\$ |conftest' build.log | tail -n 9 | cut -c1-300 | while IFS= read -r l; do echo "::error title=mksh build::$l"; done; exit 1; }
-          ./mksh -c 'echo "$KSH_VERSION"'
+          # Debian's 2013 build of mksh R43, from snapshot.debian.org
+          BASE=https://snapshot.debian.org/archive/debian/20130401T000000Z/pool/main/m/mksh/
+          DEB=$(curl -fsSL "$BASE" | grep -oE 'mksh_43[^"]*_amd64\.deb' | head -n 1)
+          [ -n "$DEB" ] || { echo "::error title=mksh R43::no R43 amd64 .deb found at $BASE"; curl -fsSL "$BASE" | grep -oE 'mksh_[^"]*\.deb' | sort -u | head -n 9 | while read -r l; do echo "::error title=available::$l"; done; exit 1; }
+          curl -fsSL -o /tmp/mksh43.deb "$BASE$DEB"
+          dpkg-deb -x /tmp/mksh43.deb /tmp/mksh43
+          M=$(ls /tmp/mksh43/bin/mksh /tmp/mksh43/usr/bin/mksh 2>/dev/null | head -n 1)
+          ln -sf "$M" /tmp/mksh-r43
+          /tmp/mksh-r43 -c 'echo "$KSH_VERSION"' | tee /dev/stderr | sed 's/^/::notice title=R43 shell::/'
 
       - name: Test the monitor service with mocked car services
         run: |
           tests/test_service.sh sh
           tests/test_service.sh mksh
           set -o pipefail
-          tests/test_service.sh /tmp/mksh-r43/mksh 2>&1 | tee r43.log \
+          tests/test_service.sh /tmp/mksh-r43 2>&1 | tee r43.log \
             || { tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done; exit 1; }
 
       - name: Build APK
