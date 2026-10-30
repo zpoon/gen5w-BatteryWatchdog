@@ -1,6 +1,6 @@
 # Battery Watchdog
 
-A [NEMESIS](#requirements) package for Hyundai, Kia and Genesis cars with the
+A [NEMESIS](#requirements) package for Hyundai and Kia cars with the
 **Gen5W** head unit. It keeps an eye on the **12V battery** and warns you on
 the car's screen before a weak battery or a charging problem leaves you
 unable to start the car.
@@ -12,7 +12,7 @@ on every drive and tells you when something looks wrong.
 ![Battery Watchdog on a Gen5W head unit: 12V charge, parked drain, HV battery health, history chart and settings](docs/screenshot.png)
 <sub>Mockup of the app on the 1920×720 Gen5W screen, with sample data.</sub>
 
-> Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC. Use at your
+> Unofficial. Not affiliated with Hyundai, Kia or HKMC. Use at your
 > own risk. Battery Watchdog only **reads** values from the car, and it
 > doesn't read anything until it has confirmed it's talking to the right
 > functions on your firmware (see [Safety](#safety)).
