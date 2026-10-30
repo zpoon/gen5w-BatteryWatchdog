@@ -42,7 +42,7 @@ jobs:
           cd /tmp/mksh-r43
           export CFLAGS="-O1 -w -std=gnu99 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types"
           sh ./Build.sh -r > build.log 2>&1 \
-            || { grep -iE "error|fail" build.log | tail -n 15 | while IFS= read -r l; do echo "::error title=mksh build::$l"; done; tail -n 5 build.log | while IFS= read -r l; do echo "::error title=mksh build tail::$l"; done; exit 1; }
+            || { grep -vE '^\$ |conftest' build.log | tail -n 9 | cut -c1-300 | while IFS= read -r l; do echo "::error title=mksh build::$l"; done; exit 1; }
           ./mksh -c 'echo "$KSH_VERSION"'
 
       - name: Test the monitor service with mocked car services
