@@ -147,6 +147,7 @@ public class MainActivity extends Activity {
         advBox.addView(scaleBtn);
         advBox.addView(button("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
         advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
+        advBox.addView(button("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }));
         advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
         right.addView(advBox);
 
@@ -260,7 +261,18 @@ public class MainActivity extends Activity {
         if (log.trim().length() == 0) d.append("(empty)\n");
         for (int i = lines.length - 1, n = 0; i >= 0 && n < 15; i--, n++) d.append(lines[i]).append("\n");
         d.append("\n");
+        // NEMESIS's own log says why it marked the service failed
+        String nl = runRoot("cat /data/nemesis/nemesis.log 2>&1");
+        String[] nlines = nl.split("\n");
+        d.append("nemesis.log, battery.watchdog lines, newest first:\n");
+        int shown = 0;
+        for (int i = nlines.length - 1; i >= 0 && shown < 12; i--) {
+            if (nlines[i].contains("battery.watchdog") || nlines[i].contains("watchdog.sh")) { d.append(nlines[i]).append("\n"); shown++; }
+        }
+        if (shown == 0) d.append(nl.contains("No such file") ? "(no /data/nemesis/nemesis.log)\n" : "(no matching lines)\n");
+        d.append("\n");
         d.append("shell: ").append(runRoot("echo $KSH_VERSION").trim()).append("\n");
+        d.append("script file: ").append(runRoot("ls -l " + SVC_SCRIPT + " 2>&1").trim()).append("\n");
         String chk = runRoot("/system/bin/sh -n " + SVC_SCRIPT + " 2>&1 && echo OK").trim();
         d.append("script syntax check: ").append(chk.length() == 0 ? "(no output)" : chk).append("\n");
         d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
@@ -279,6 +291,17 @@ public class MainActivity extends Activity {
                 + NEM + " service status " + SVC_ID + " 2>&1");
         rawLabel.setText("Restart: " + r.trim().replace("\n", "  |  "));
         toast("Monitor restarted. Check Diagnostics in 30 seconds.");
+    }
+
+    // Runs the installed monitor script directly as root for a couple of loops
+    // (BWD_TEST shortens the timings), bypassing NEMESIS. Real readings are saved.
+    void testRun() {
+        toast("Running the monitor for about 10 seconds\u2026");
+        String out = runRoot("cd " + STATE + " && BWD_TEST=1 BWD_TEST_LOOPS=3 /system/bin/sh " + SVC_SCRIPT
+                + " > " + STATE + "/testrun.log 2>&1; echo \"exit code $?\"; cat " + STATE + "/testrun.log");
+        new AlertDialog.Builder(this).setTitle("Test run").setMessage(out.trim().length() == 0 ? "(no output)" : out.trim())
+            .setPositiveButton("Close", null).show();
+        refreshData();
     }
 
     void clearHistory() {
