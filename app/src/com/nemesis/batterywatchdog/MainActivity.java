@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -70,6 +71,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // drop the system title bar: the app draws its own title in the left column
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
         loadConfig();
 
         LinearLayout root = new LinearLayout(this);
@@ -172,6 +175,7 @@ public class MainActivity extends Activity {
         advBox.addView(button("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
         advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
         advBox.addView(button("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }));
+        advBox.addView(button("Export to USB", new View.OnClickListener() { public void onClick(View v) { exportToUsb(); } }));
         advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
         overrideBtn = button("Unverified firmware: use built-in numbers\u2026", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
         advBox.addView(overrideBtn);
@@ -427,6 +431,12 @@ public class MainActivity extends Activity {
     static final String SVC_SCRIPT = "/data/nemesis/apps/battery.watchdog/svc/watchdog.sh";
 
     void showDiagnostics() {
+        new AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(buildDiagnostics())
+            .setPositiveButton("Close", null).show();
+    }
+
+    /** Diagnostics text, shown in the dialog and saved by the USB export. */
+    String buildDiagnostics() {
         StringBuilder d = new StringBuilder();
         d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
         d.append("firmware: ").append(fw).append("\n");
@@ -458,9 +468,33 @@ public class MainActivity extends Activity {
         d.append("date: ").append(runRoot("date; date +%s").trim().replace("\n", "  |  ")).append("\n");
         d.append("display: ").append(runRoot("dumpsys power | grep -E 'mWakefulness=|mScreenOn=|policy=' 2>/dev/null").trim()).append("\n\n");
         d.append("status file:\n").append(runRoot("cat " + STATE + "/status 2>&1").trim()).append("\n\n");
-        d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n");
-        new AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(d.toString())
-            .setPositiveButton("Close", null).show();
+        d.append("state dir:\n").append(runRoot("ls -l " + STATE + " 2>&1").trim()).append("\n\n");
+        // outside temperature: which source the monitor used, and what each source shows now
+        String st = runRoot("cat " + STATE + "/status 2>/dev/null");
+        d.append("temperature: ").append(kv(st, "temp_c").length() > 0 ? kv(st, "temp_c") + " C via " + kv(st, "temp_src") : "none found").append("\n");
+        d.append("climate dump, OutTemp lines:\n").append(firstLines(runRoot("dumpsys com.hkmc.micom.datc 2>&1 | grep -i outtemp"), 8)).append("\n");
+        d.append("logcat temperature lines, newest:\n")
+            .append(lastLines(runRoot("logcat -d 2>/dev/null | grep -E 'outTemperature|setOutsideTempUIAdvanced'"), 3)).append("\n");
+        return d.toString();
+    }
+
+    static String firstLines(String text, int n) {
+        String t = text.trim();
+        if (t.length() == 0) return "(none)\n";
+        String[] l = t.split("\n");
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < l.length && i < n; i++) b.append(l[i]).append("\n");
+        if (l.length > n) b.append("... (" + (l.length - n) + " more)\n");
+        return b.toString();
+    }
+
+    static String lastLines(String text, int n) {
+        String t = text.trim();
+        if (t.length() == 0) return "(none)\n";
+        String[] l = t.split("\n");
+        StringBuilder b = new StringBuilder();
+        for (int i = Math.max(0, l.length - n); i < l.length; i++) b.append(l[i]).append("\n");
+        return b.toString();
     }
 
     void restartService() {
@@ -484,6 +518,113 @@ public class MainActivity extends Activity {
             .setPositiveButton("Close", null).show();
         refreshData();
     }
+
+    // ---- export to USB ---------------------------------------------------------
+    static final String[] USB_ROOTS = { "/storage/usb0", "/storage/usb1", "/storage/usb2",
+            "/mnt/media_rw/usb0", "/mnt/media_rw/usb1" };
+    static final String[] STATE_FILES = { "log.csv", "log.old.csv", "sessions", "warnings", "status", "txn",
+            "enabled", "warn_pct", "drop_pct", "interval_s", "toast_start", "decode", "scale_x10" };
+
+    void exportToUsb() {
+        toast("Exporting\u2026");
+        new Thread(new Runnable() { public void run() {
+            final String msg = doExport();
+            handler.post(new Runnable() { public void run() {
+                new AlertDialog.Builder(MainActivity.this).setTitle("Export to USB").setMessage(msg)
+                    .setPositiveButton("Close", null).show();
+            } });
+        } }).start();
+    }
+
+    String doExport() {
+        // first writable USB root
+        StringBuilder probe = new StringBuilder();
+        for (String r : USB_ROOTS) {
+            probe.append("[ -d " + r + " ] && touch " + r + "/.bwd_w 2>/dev/null && rm " + r + "/.bwd_w && echo " + r + " && exit 0; ");
+        }
+        String usb = runRoot("( " + probe + " ) 2>/dev/null").trim();
+        if (usb.length() == 0 || !usb.startsWith("/")) return "No USB drive found. Insert a FAT32 or exFAT drive and try again.";
+        usb = usb.split("\n")[0].trim();
+
+        String stamp = new SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(new Date());
+        String dir = usb + "/BatteryWatchdog-export-" + stamp;
+        runRoot("mkdir -p '" + dir + "/raw'");
+
+        // raw copies (cat: KitKat's toolbox has no cp)
+        StringBuilder cp = new StringBuilder();
+        for (String f : STATE_FILES) cp.append("[ -f " + STATE + "/" + f + " ] && cat " + STATE + "/" + f + " > '" + dir + "/raw/" + f + "'; ");
+        runRoot(cp.toString());
+
+        // readable files built here, then copied over by root
+        SimpleDateFormat t = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+        int rows = 0;
+        StringBuilder rd = new StringBuilder("time,event,v12_pct,main_battery_pct,outside_f,hv_soh,raw\n");
+        String log = runRoot("cat " + STATE + "/log.old.csv " + STATE + "/log.csv 2>/dev/null");
+        for (String line : log.split("\n")) {
+            String[] f = line.split(",", -1);
+            if (f.length < 4) continue;
+            long ts = parseL(f[0], 0);
+            if (ts <= 0) continue;
+            int p = parse(f[3], -1);
+            String hv = f.length > 5 && parse(f[5], -1) >= 0 ? fmt10(parse(f[5], -1)) : "";
+            String tf = f.length > 6 && f[6].trim().length() > 0 ? String.valueOf(Math.round(parse(f[6], 0) * 9 / 5f + 32)) : "";
+            rd.append(t.format(new Date(ts * 1000))).append(',').append(f[1]).append(',')
+              .append(p >= 0 ? fmt10(p) : "").append(',').append(hv).append(',').append(tf).append(',')
+              .append(f.length > 4 ? f[4] : "").append(',').append(f[2]).append('\n');
+            rows++;
+        }
+
+        // one row per finished drive, with the parked time and change before it
+        StringBuilder dv = new StringBuilder("drive_start,drive_minutes,v12_start_pct,v12_end_pct,change_during_drive_pts,parked_before_minutes,change_while_parked_pts\n");
+        long prevEnd = -1; int prevEndPct = -1;
+        int drives = 0;
+        for (String line : runRoot("cat " + STATE + "/sessions 2>/dev/null").split("\n")) {
+            String[] f = line.trim().split("\\s+");
+            if (f.length < 4) continue;
+            long st = parseL(f[0], 0); int min = parse(f[1], -1), sp = parse(f[2], -1), ep = parse(f[3], -1);
+            if (st <= 0 || min < 0 || sp < 0 || ep < 0) continue;
+            String parked = prevEnd > 0 && st > prevEnd ? String.valueOf((st - prevEnd) / 60) : "";
+            String pchg = prevEnd > 0 && st > prevEnd ? fmtSigned10(sp - prevEndPct) : "";
+            dv.append(t.format(new Date(st * 1000))).append(',').append(min).append(',').append(fmt10(sp)).append(',')
+              .append(fmt10(ep)).append(',').append(fmtSigned10(ep - sp)).append(',').append(parked).append(',').append(pchg).append('\n');
+            prevEnd = st + min * 60L; prevEndPct = ep; drives++;
+        }
+
+        StringBuilder wr = new StringBuilder();
+        for (String line : runRoot("cat " + STATE + "/warnings 2>/dev/null").split("\n")) {
+            String l = line.trim();
+            int sp = l.indexOf(' ');
+            if (sp <= 0) continue;
+            long ts = parseL(l.substring(0, sp), 0);
+            wr.append(ts > 0 ? t.format(new Date(ts * 1000)) : l.substring(0, sp)).append("  ").append(l.substring(sp + 1)).append('\n');
+        }
+        if (wr.length() == 0) wr.append("No warnings recorded.\n");
+
+        String err = "";
+        err += writeToUsb("readings.csv", rd.toString(), dir);
+        err += writeToUsb("drives.csv", dv.toString(), dir);
+        err += writeToUsb("warnings.txt", wr.toString(), dir);
+        err += writeToUsb("diagnostics.txt", "Battery Watchdog export " + stamp + "\n\n" + buildDiagnostics(), dir);
+        runRoot("sync");
+        if (err.length() > 0) return "Some files couldn't be written to " + dir + ":\n" + err;
+        return "Exported " + rows + " readings and " + drives + " drives to\n" + dir
+            + "\n\nreadings.csv and drives.csv open in Excel or Google Sheets. raw/ has the original files.";
+    }
+
+    String writeToUsb(String name, String content, String dir) {
+        try {
+            File tmp = new File(getCacheDir(), name);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
+            try { out.write(content.getBytes("UTF-8")); } finally { out.close(); }
+            String r = runRoot("cat '" + tmp.getAbsolutePath() + "' > '" + dir + "/" + name + "' && echo ok").trim();
+            tmp.delete();
+            return r.endsWith("ok") ? "" : name + ": " + r + "\n";
+        } catch (Exception e) {
+            return name + ": " + e.getMessage() + "\n";
+        }
+    }
+
+    static String fmtSigned10(int v) { return (v > 0 ? "+" : v < 0 ? "-" : "") + fmt10(Math.abs(v)); }
 
     void clearHistory() {
         runRoot("rm -f " + STATE + "/log.csv " + STATE + "/log.old.csv " + STATE + "/sessions "

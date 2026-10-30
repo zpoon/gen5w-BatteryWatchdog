@@ -18,7 +18,7 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.4.1
+VERSION=0.5.0
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
@@ -63,7 +63,17 @@ hex2dec() {
 }
 
 # atomic-enough write without mv -f (toolbox mv on KitKat takes no options)
-put() { _f=$1; shift; echo "$*" > "$_f.tmp" 2>/dev/null && cat "$_f.tmp" > "$_f" 2>/dev/null; rm "$_f.tmp" 2>/dev/null; }
+# one small write, straight to the file (no temp copy: fewer flash writes; readers
+# just retry on their next refresh if they ever catch a half-written file)
+put() { _f=$1; shift; echo "$*" > "$_f" 2>/dev/null; }
+
+# Command output is split into lines in memory with a newline IFS (and globbing
+# off), instead of going through a temp file or a here-document, which mksh
+# also backs with a temp file. Keeps the per-sample writes down.
+NL='
+'
+lines_on() { _oifs=$IFS; IFS=$NL; set -f; }
+lines_off() { IFS=$_oifs; set +f; }
 
 # ---- display state (from hkmc-factory82's detector) --------------------------
 DUMPSYS=/system/bin/dumpsys
@@ -123,18 +133,70 @@ decode() {   # RAW -> tenths of a percent, or -1
     if [ "$_p" -lt 0 ] || [ "$_p" -gt 1000 ]; then echo -1; else echo "$_p"; fi
 }
 
-# Outside temperature in whole deg C from the telematics ECO JSON in logcat
-# (same source hkmc-coldstart-heat uses). Sets TEMP_C, or leaves it empty.
+# ---- outside temperature (context only; never used for decisions) ------------
+# Sets TEMP_C (whole deg C) and TEMP_SRC, or leaves TEMP_C empty. TEMP_LINE keeps
+# the climate-dump line it looked at, for Diagnostics. Sources, in order:
+#   1. dumpsys of the climate service (egmp-aa-ev-feat: outside temp is in it);
+#      the format isn't documented, so only clearly-labelled values are used:
+#      a key ending in C / F, or a raw sensor value (raw x 0.5 - 40 C)
+#   2. telematics ECO JSON "outTemperature" in logcat (deg C), as coldstart-heat
+#   3. UI log "setOutsideTempUIAdvanced::temp = N" (deg F), coldstart-heat's fallback
+TEMP_SRC=""; TEMP_LINE=""
+trim() { _t=$1; while :; do case "$_t" in ' '*) _t=${_t# };; *' ') _t=${_t% };; *) break;; esac; done; echo "$_t"; }
+in_range_c() { [ "$1" -ge -50 ] 2>/dev/null && [ "$1" -le 60 ]; }
+
+temp_from_datc() {
+    _out=$($DUMPSYS com.hkmc.micom.datc 2>/dev/null | grep -i 'outtemp')
+    _found=1
+    lines_on
+    for _x in $_out; do
+        [ -n "$TEMP_LINE" ] || TEMP_LINE=$_x
+        case "$_x" in *=*|*:*) ;; *) continue;; esac
+        _k=$(trim "${_x%%[=:]*}"); _v=$(trim "${_x#*[=:]}"); _v=${_v%% *}
+        case "$_v" in
+            0x*|0X*) _n=$(hex2dec "${_v#0[xX]}");;
+            *) _n=${_v%%[!0-9-]*};;
+        esac
+        case "$_n" in ''|-|*[!0-9-]*) continue;; esac
+        case "$_k" in
+            *[Rr]aw*|*[Ss]nsr*|*SNSR*) _c=$(( _n / 2 - 40 ));;
+            *[Cc]elsius*|*_C|*_c|*TempC|*tempC|*TEMPC) _c=$_n;;
+            *[Ff]ahrenheit*|*_F|*_f|*TempF|*tempF|*TEMPF) _c=$(( (_n - 32) * 5 / 9 ));;
+            *) continue;;
+        esac
+        if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=climate; _found=0; break; fi
+    done
+    lines_off
+    return $_found
+}
+
+temp_from_logcat() {
+    _out=$(logcat -d 2>/dev/null | grep -E 'outTemperature|setOutsideTempUIAdvanced')
+    _eco=""; _ui=""
+    lines_on
+    for _x in $_out; do
+        case "$_x" in
+            *'"outTemperature":'*) _eco=$_x;;
+            *'setOutsideTempUIAdvanced::temp ='*) _ui=$_x;;
+        esac
+    done
+    lines_off
+    if [ -n "$_eco" ]; then
+        _c=${_eco#*\"outTemperature\":}; _c=${_c%%[!0-9-]*}
+        case "$_c" in ''|-|*[!0-9-]*) ;; *) if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=eco_log; return 0; fi;; esac
+    fi
+    if [ -n "$_ui" ]; then
+        _f=${_ui#*temp = }; _f=${_f%% *}; _f=${_f%%.*}
+        case "$_f" in ''|-|*[!0-9-]*) ;; *) _c=$(( (_f - 32) * 5 / 9 )); if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=ui_log; return 0; fi;; esac
+    fi
+    return 1
+}
+
 read_temp() {
-    _line=""
-    logcat -d 2>/dev/null | grep '"outTemperature":' > "$STATE/.temp.tmp" 2>/dev/null
-    while IFS= read -r _x; do [ -n "$_x" ] && _line=$_x; done < "$STATE/.temp.tmp"
-    rm "$STATE/.temp.tmp" 2>/dev/null
-    [ -z "$_line" ] && return
-    _c=${_line#*\"outTemperature\":}
-    _c=${_c%%[!0-9-]*}
-    case "$_c" in ''|-|*[!0-9-]*) return;; esac
-    if [ "$_c" -ge -50 ] && [ "$_c" -le 60 ]; then TEMP_C=$_c; fi
+    TEMP_LINE=""
+    temp_from_datc && return
+    temp_from_logcat && return
+    TEMP_C=""; TEMP_SRC=""
 }
 
 SOH_RAW=""; HV10=""; TEMP_C=""
@@ -157,8 +219,8 @@ sample() {   # sets S_RAW, S_PCT10 (-1 if invalid)
 append() {   # event raw pct10
     echo "$(now),$1,$2,$3,$SOH_RAW,$HV10,$TEMP_C" >> "$LOG"
     LINES=$((LINES + 1))
-    if [ "$LINES" -ge "$MAX_LINES" ]; then mv "$LOG" "$STATE/log.old.csv" 2>/dev/null; LINES=0; fi
-    put "$STATE/lines" "$LINES"
+    if [ "$LINES" -ge "$MAX_LINES" ]; then mv "$LOG" "$STATE/log.old.csv" 2>/dev/null; LINES=0; put "$STATE/lines" 0
+    elif [ $((LINES % 50)) -eq 0 ]; then put "$STATE/lines" "$LINES"; fi   # save the count only now and then
 }
 
 write_status() {   # state
@@ -174,14 +236,15 @@ write_status() {   # state
         echo "prev_session=$PREV_LINE"
         echo "hv10=$HV10"
         echo "temp_c=$TEMP_C"
+        echo "temp_src=$TEMP_SRC"
+        echo "temp_line=$TEMP_LINE"
         echo "parked_min=$PARK_MIN"
         echo "parked_drop10=$PARK_DROP10"
         echo "parked_rate10_day=$PARK_RATE10"
         echo "firmware=$FW"
         echo "verify=$VERIFY_WHY"
         echo "warn=$WARN_TEXT"
-    } > "$STATE/status.tmp" 2>/dev/null && cat "$STATE/status.tmp" > "$STATE/status" 2>/dev/null
-    rm "$STATE/status.tmp" 2>/dev/null
+    } > "$STATE/status" 2>/dev/null
 }
 
 load_cfg() {

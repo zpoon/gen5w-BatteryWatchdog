@@ -15,9 +15,22 @@ All reads are getters on the telematics service `tm_hscan_service`
 | 74 (0x4a) | `remainBatteryPercentage` | float, % | main (HV) battery charge |
 | 214 (0xd6) | `getXEV_Bms_GDS_SOH` | int, raw byte | HV battery health index (100 = new) |
 
-Outside temperature comes from the telematics `"outTemperature"` JSON in
-logcat (whole °C), the same source
-[hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat) uses.
+Outside temperature (context only, never used for decisions) is tried from,
+in order:
+
+1. `dumpsys com.hkmc.micom.datc`, lines containing `OutTemp`.
+   egmp-aa-ev-feat confirms the outside temperature is in this dump, but its
+   format isn't documented, so only clearly-labelled values are used: a key
+   ending in C or F, or a raw sensor value (raw × 0.5 − 40 °C, Hyundai's own
+   decode). Unlabelled numbers are ignored. Diagnostics shows the lines it saw.
+2. The telematics ECO JSON `"outTemperature"` in logcat (whole °C), as
+   [hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat).
+3. The UI log line `setOutsideTempUIAdvanced::temp = N` (°F), coldstart-heat's
+   fallback.
+
+The status file records `temp_src` (`climate`, `eco_log` or `ui_log`) and the
+climate-dump line it looked at (`temp_line`). No transaction numbers are
+involved.
 
 Reference probe on a 2023 Ioniq 5 SEL (US), head-unit firmware 260507, car on
 and parked:
@@ -103,6 +116,16 @@ KitKat's toolbox:
 CI fetches Debian's 2013 build of mksh R43 and runs `tests/test_service.sh`
 under it, plus `sh` and a current mksh.
 
+## Storage writes
+
+Writes happen only at a sample (every `interval_s` while the display is on)
+and at a drive start: one ~60-byte line appended to `log.csv`, and small
+rewrites of `status` and `last`. The line counter is saved every 50 samples.
+Command output is parsed in memory (newline `IFS`), not through temp files or
+here-documents. Polling the display, logcat and the climate dump only reads.
+Estimated well under 1 GB of physical writes a year at typical use, a tiny
+fraction of an eMMC's rated endurance.
+
 ## Files on the head unit
 
 Package: `/data/nemesis/apps/battery.watchdog/`.
@@ -114,7 +137,7 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 
 | file | contents |
 |---|---|
-| `log.csv` | `epoch,event,raw_hex,pct10,soh_raw,hv10,temp_c` (`event` = `start`/`sample`). Rotates to `log.old.csv` at `max_lines` (4000) |
+| `log.csv` | `epoch,event,raw_hex,pct10,soh_raw,hv10,temp_c` (`event` = `start`/`sample`). Rotates to `log.old.csv` at `max_lines` (4000). **Advanced → Export to USB** converts it to `readings.csv` and `drives.csv` |
 | `sessions` | one line per finished drive: `start_epoch minutes start_pct10 end_pct10` |
 | `warnings` | every warning raised, timestamped |
 | `status` | latest state, read by the app |

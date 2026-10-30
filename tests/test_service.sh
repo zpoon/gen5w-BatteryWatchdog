@@ -28,9 +28,10 @@ case "\$3" in
 esac
 EOT
     printf '#!/bin/sh\necho "$6" >> %s/toasts\n' "$T" > "$T/bin/am"
-    printf '#!/bin/sh\ncat %s/disp\n' "$T" > "$T/bin/dumpsys"
+    printf '#!/bin/sh\ncase "$1" in power) cat %s/disp;; com.hkmc.micom.datc) cat %s/datc 2>/dev/null;; esac\n' "$T" "$T" > "$T/bin/dumpsys"
     printf '#!/bin/sh\ncat %s/fw\n' "$T" > "$T/bin/getprop"
-    printf '#!/bin/sh\necho "10-29 18:42:18.630 I/ECO( 548): {\\"speed\\":0,\\"outTemperature\\":12,\\"x\\":1}"\n' > "$T/bin/logcat"
+    printf '#!/bin/sh\ncat %s/logcat 2>/dev/null\n' "$T" > "$T/bin/logcat"
+    printf '10-29 18:42:18.630 I/ECO( 548): {"speed":0,"outTemperature":12,"x":1}\n' > "$T/logcat"
     chmod +x "$T/bin/"*
     echo 00000053 > "$T/socval"; echo 137 > "$T/txn_soc"
     echo "mWakefulness=Awake" > "$T/disp"
@@ -102,5 +103,29 @@ grep -q '^pct10=830' "$T/state/status" || fail "F: should read 83% via txn 141"
 grep -q '^74$' "$T/calls" && fail "F: hv is '-' for this build, must not call 74"
 grep -q '^137$' "$T/calls" && fail "F: must not call the reference build's 137"
 rm -rf "$T"; echo "  F per-build numbers from known_firmware.txt: ok"
+
+# G-J: outside temperature sources (context only)
+temp_case() {   # temp_case <name> <datc file content or ''> <logcat content> <want temp_c> <want src>
+    T=$(mktemp -d); setup "$T"
+    if [ -n "$2" ]; then printf '%s\n' "$2" > "$T/datc"; fi
+    printf '%s\n' "$3" > "$T/logcat"
+    run "$T" 2
+    grep -q "^temp_c=$4\$" "$T/state/status" || fail "$1: temp_c should be $4"
+    grep -q "^temp_src=$5\$" "$T/state/status" || fail "$1: temp_src should be $5"
+    rm -rf "$T"; echo "  $1: ok"
+}
+temp_case "G climate dump, Celsius key" "  mOutTempC = 4" "" 4 climate
+temp_case "H climate dump, raw sensor" "OutTempSnsr: 0x64" "" 10 climate
+temp_case "I UI log in Fahrenheit" "" "10-30 08:00:00.000 D/Climate( 99): setOutsideTempUIAdvanced::temp = 50 F" 10 ui_log
+temp_case "J unlabelled dump value ignored, ECO log used" "OutTemp = 77" '{"outTemperature":-3}' -3 eco_log
+temp_case "K multi-line dump, second line labelled" "OutTemp = 77
+  OutTempF: 41 *glob* chars" "" 5 climate
+temp_case "L newest ECO line wins" "" '{"outTemperature":1}
+{"outTemperature":7}' 7 eco_log
+
+# M: nothing temporary left behind in the state dir
+T=$(mktemp -d); setup "$T"; printf '  mOutTempC = 4\n' > "$T/datc"; run "$T" 3
+ls -a "$T/state" | grep -E '\.tmp$|^\.datc|^\.temp' && fail "M: temp files left in the state dir"
+rm -rf "$T"; echo "  M no temp files: ok"
 
 echo "PASS ($SH)"

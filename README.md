@@ -32,6 +32,8 @@ on every drive and tells you when something looks wrong.
   lowers 12V readings.
 - **HV battery health (SOH)** in a color-coded box (display only).
 - **History chart** of recent readings, with the start of each drive marked.
+- **Export to USB:** your readings, drives and warnings as spreadsheet-ready
+  CSV files.
 - **Built-in diagnostics** for troubleshooting.
 
 It's an early-warning aid, not a battery tester: see
@@ -97,6 +99,23 @@ Tap **Save** after changing settings; they apply from the next drive.
 **HV battery health** colors: green 90 and above, amber 75–89, red below 75.
 It's the car's health index for the main battery pack (100 = new), not a
 capacity measurement, and it never triggers warnings.
+
+### Exporting your data
+
+Insert a USB drive (FAT32 or exFAT, ideally one **without** a `NEMESIS.data`
+file on it), then tap **Advanced → Export to USB**. It creates a folder like
+`BatteryWatchdog-export-2026-10-30_0815/` containing:
+
+| File | Contents |
+|---|---|
+| `readings.csv` | every reading: time, drive start or sample, 12V %, main battery %, outside °F, HV health |
+| `drives.csv` | one row per drive: start, length, 12V at start and end, time parked before it and the change while parked |
+| `warnings.txt` | every warning, with dates |
+| `diagnostics.txt` | the Diagnostics screen, handy for bug reports |
+| `raw/` | the original files |
+
+The export contains readings, settings and the firmware version; nothing
+identifies you or the car.
 
 ### How warnings appear
 
