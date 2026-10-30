@@ -485,7 +485,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.4";   // keep in step with AndroidManifest versionName
+    static final String APP_VERSION = "0.5.5";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
@@ -886,11 +886,36 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return null; }
     }
 
+    /**
+     * Was the file written completely? Compares its size on disk with the bytes
+     * we meant to write. (Reading the whole file back through the root shell
+     * wasn't reliable on the car: an export that worked was reported as failed,
+     * most likely because long output gets cut off on the way back.)
+     */
     boolean sameContent(String path, String content) {
-        String back = runRoot("cat '" + path.replace("'", "'\\''") + "' 2>/dev/null");
-        // runRoot normalises line endings to \n and adds a trailing one
-        String a = back.trim(), b = content.trim();
-        return a.equals(b);
+        long want;
+        try { want = content.getBytes("UTF-8").length; } catch (Exception e) { return false; }
+        long got = fileSize(path);
+        if (got >= 0) return got == want;
+        // size unknown: fall back to comparing short files by content
+        if (want > 4096) return false;
+        String back = runRoot("cat " + shq(path) + " 2>/dev/null");
+        return back.trim().equals(content.trim());
+    }
+
+    /** File size from `ls -l` as root, or -1. Works with toolbox and busybox formats. */
+    long fileSize(String path) {
+        String l = runRoot("ls -l " + shq(path) + " 2>/dev/null").trim();
+        if (l.length() == 0 || l.startsWith("ls:")) return -1;
+        String[] t = l.split("\\s+");
+        // the size is the last plain number before the date (2026-10-30 or Oct)
+        for (int i = 1; i < t.length; i++) {
+            if (t[i].matches("\\d{4}-\\d\\d-\\d\\d") || t[i].matches("[A-Z][a-z]{2}")) {
+                for (int j = i - 1; j > 0; j--) if (t[j].matches("\\d+")) return Long.parseLong(t[j]);
+                return -1;
+            }
+        }
+        return -1;
     }
 
     int readInt(String name, int def) {
