@@ -35,6 +35,40 @@ leaves the 12V. Readings later the same evening were 85 %.
 The 12V voltage and current aren't exposed by any binder method found so far;
 the battery sensor's SOC estimate is the best available signal.
 
+## Firmware verification
+
+Transaction numbers are positions in `ITM_HSCANService`'s method list. They're
+stable within a firmware build but can shift between builds, and the same
+service has functions that must never be called by accident
+(egmp-aa-ev-feat lists `setCanSignalValue`, `reqResetSignals` = 132,
+`setValetModeOnOff`, `requestDiag`, `resetDrivingInfo`, charging and climate
+requests). So the numbers are never used blindly:
+
+1. **Resolved by name (app).** On launch the app finds the ODEX files that
+   mention `ITM_HSCANService` (`grep -l` over `/system/framework`,
+   `/system/app`, `/system/priv-app`, `/vendor/framework`), parses them with
+   `TxnResolver` (a Java port of hkmc-coldstart-heat's `dexodex.py`), and reads
+   the `TRANSACTION_getBatSoc`, `TRANSACTION_remainBatteryPercentage` and
+   `TRANSACTION_getXEV_Bms_GDS_SOH` constants from
+   `ITM_HSCANService$Stub`. It saves them to `txn` with the firmware id
+   (`ro.build.version.incremental`). No binder calls are needed for this.
+2. **Hand-verified firmware (app and service).** `KNOWN_FW` in
+   `svc/watchdog.sh` and `MainActivity.java`. Currently
+   `eng.vmadmin.20260507.094910` (2023 Ioniq 5 SEL US, 260507): 137 / 74 / 214.
+3. **Manual override (app).** Advanced → "use built-in numbers…", with a
+   warning; saved to `txn` as `source=manual-override` for this firmware only.
+
+The service uses `txn` only if its `fw` matches the running firmware, and
+`service list` must show `tm_hscan_service: [com.hkmc.telematics.hscan.tm_interface.ITM_HSCANService]`.
+Otherwise it reports `state=unverified` (or `verify=interface_mismatch`),
+makes no calls, and rechecks every minute. The app's own reads (SOH box, Read
+sensor now, Test run) follow the same rules.
+
+`tests/test_service.sh` checks that an unknown firmware, a `txn` file from a
+different firmware, and a wrong interface all result in **zero** binder calls;
+`tests/test_resolver.sh` builds an AIDL-shaped fixture into a real DEX with
+`dx` and checks the resolver (plain and ODEX-wrapped).
+
 ## How the service works
 
 `package/svc/watchdog.sh` runs as a NEMESIS `mode=restart` service
@@ -88,18 +122,26 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 
 ## Porting to another car or firmware
 
-1. Run the probe in `research/probe-12v/`: copy its `NEMESIS.data` and
-   `NEMESIS.sh` to the root of a USB drive, insert it with the car on and
-   parked, and approve. After about 3 minutes, `PROBE-12V.txt` on the drive has
-   the raw replies.
-2. Check `txn 137`:
-   - a small number such as `00000053` is an integer: decode = Integer, and
-     scale = 1 % (or 0.5 % if it reads about double the real value);
-   - something like `42b40000` is a float: decode = Float;
-   - `00000000` every time, or a non-zero first word, means this firmware
-     doesn't provide it.
-3. Set those under **Advanced** in the app, and please open an issue with your
-   car, firmware and probe output so it can go in the compatibility table.
+1. Install the package and open the app. If Diagnostics shows
+   `verification: resolved (…)`, the numbers were found by name and the
+   monitor runs; skip to step 4.
+2. If it shows **Paused**, check the numbers **offline**, without calling them:
+   copy the ODEX files to a USB drive with the read-only dump probe in
+   `research/odex-dump/` (put its two files at the root of a USB drive, insert,
+   approve, wait a few minutes; files land in `odex-dump/`), then search them on a computer with hkmc-coldstart-heat's `dexodex.py` for
+   `ITM_HSCANService$Stub` and its `TRANSACTION_getBatSoc`,
+   `TRANSACTION_remainBatteryPercentage` and `TRANSACTION_getXEV_Bms_GDS_SOH`.
+3. Only if they're 137, 74 and 214, use Advanced → "use built-in numbers…".
+   (The USB probe in `research/probe-12v/` calls those numbers directly, so
+   only run it once you know they're the getters.)
+4. Please open an issue with your car, firmware (`ro.build.version.incremental`)
+   and the numbers, so the firmware can be added to `KNOWN_FW` and the
+   compatibility table.
+
+The probe's raw replies decode like this: a small number such as `00000053`
+is an integer (decode = Integer, scale = 1 %, or 0.5 % if it reads about
+double); something like `42b40000` is a float (decode = Float); `00000000`
+every time means the firmware doesn't fill it.
 
 ## NEMESIS "giving up"
 

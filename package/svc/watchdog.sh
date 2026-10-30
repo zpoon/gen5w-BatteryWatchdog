@@ -18,13 +18,12 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.3.0
+VERSION=0.4.0
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
-TX_SOC=137
-TX_SOH=214
-TX_HVSOC=74      # 0x4a remainBatteryPercentage: float, main battery SOC (probe: 70.5)
+# Transaction numbers are NOT hard-wired: see verify() below.
+TX_SOC=""; TX_SOH=""; TX_HVSOC=""
 mkdir -p "$STATE" 2>/dev/null
 LOG=$STATE/log.csv
 
@@ -143,11 +142,12 @@ sample() {   # sets S_RAW, S_PCT10 (-1 if invalid)
     S_RAW=""; S_PCT10=-1
     _try=0
     while [ "$_try" -lt 5 ]; do
+        [ -n "$TX_SOC" ] || break
         if call_word "$TX_SOC"; then S_RAW=$RAW; S_PCT10=$(decode "$RAW"); [ "$S_PCT10" -ge 0 ] && break; fi
         _try=$((_try + 1)); sleep 2
     done
-    if call_word "$TX_SOH"; then SOH_RAW=$(hex2dec "$RAW"); fi
-    if call_word "$TX_HVSOC"; then
+    if [ -n "$TX_SOH" ] && call_word "$TX_SOH"; then SOH_RAW=$(hex2dec "$RAW"); fi
+    if [ -n "$TX_HVSOC" ] && call_word "$TX_HVSOC"; then
         _h=$(float10 "$RAW")
         if [ "$_h" -ge 0 ] && [ "$_h" -le 1000 ]; then HV10=$_h; fi
     fi
@@ -177,6 +177,8 @@ write_status() {   # state
         echo "parked_min=$PARK_MIN"
         echo "parked_drop10=$PARK_DROP10"
         echo "parked_rate10_day=$PARK_RATE10"
+        echo "firmware=$FW"
+        echo "verify=$VERIFY_WHY"
         echo "warn=$WARN_TEXT"
     } > "$STATE/status.tmp" 2>/dev/null && cat "$STATE/status.tmp" > "$STATE/status" 2>/dev/null
     rm "$STATE/status.tmp" 2>/dev/null
@@ -251,6 +253,47 @@ session_start() {   # reason
     write_status ok
 }
 
+# ---- firmware / interface verification -----------------------------------------
+# Transaction numbers are positions in ITM_HSCANService's method list and can
+# shift between firmware builds, where the same number may reach a setter or a
+# reset. So they are never used blindly:
+#   1. numbers the app resolved BY NAME from this firmware's own interface
+#      definition (TRANSACTION_getBatSoc etc.), saved in $STATE/txn together
+#      with the firmware id they were resolved on; or
+#   2. built-in numbers, only on firmware builds verified by hand (KNOWN_FW).
+# With neither, the monitor makes no calls and reports state=unverified.
+# The service must also report the expected interface descriptor.
+HSCAN_IFACE=com.hkmc.telematics.hscan.tm_interface.ITM_HSCANService
+# 2023 Ioniq 5 SEL US, NEEV.USA.0000.V015.012.260507: soc=137 hv=74 soh=214
+KNOWN_FW=" eng.vmadmin.20260507.094910 "
+FW=$(getprop ro.build.version.incremental 2>/dev/null)
+VERIFIED=0; VERIFY_WHY=""
+
+isnum() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -gt 0 ] && [ "$1" -lt 1000 ]; }
+
+verify() {
+    VERIFIED=0; TX_SOC=""; TX_SOH=""; TX_HVSOC=""
+    if ! service list 2>/dev/null | grep "$SVC" | grep -q "$HSCAN_IFACE"; then
+        VERIFY_WHY=interface_mismatch; return
+    fi
+    if [ -r "$STATE/txn" ]; then
+        _fw=""; _soc=""; _hv=""; _soh=""
+        while IFS='=' read -r _k _v; do
+            case "$_k" in fw) _fw=$_v;; soc) _soc=$_v;; hv) _hv=$_v;; soh) _soh=$_v;; esac
+        done < "$STATE/txn"
+        if [ -n "$FW" ] && [ "$_fw" = "$FW" ] && isnum "$_soc"; then
+            TX_SOC=$_soc
+            isnum "$_hv" && TX_HVSOC=$_hv
+            isnum "$_soh" && TX_SOH=$_soh
+            VERIFIED=1; VERIFY_WHY=resolved_by_name; return
+        fi
+    fi
+    case "$KNOWN_FW" in
+        *" $FW "*) if [ -n "$FW" ]; then TX_SOC=137; TX_HVSOC=74; TX_SOH=214; VERIFIED=1; VERIFY_WHY=known_firmware; return; fi ;;
+    esac
+    VERIFY_WHY=unverified_firmware
+}
+
 # ---- main ----------------------------------------------------------------------
 load_cfg
 LINES=$(cfg lines 0)
@@ -263,6 +306,9 @@ while [ "$i" -lt 120 ]; do
     sleep 2; i=$((i + 2))
 done
 [ "$i" -ge 120 ] && log "$SVC not registered after 120s; continuing anyway"
+
+verify
+log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"
 
 DISP=$(display_state)
 PREV_DISP=$DISP
@@ -278,6 +324,16 @@ while :; do
     if [ "$ENABLED" != "1" ]; then
         DISP=$(display_state); write_status disabled
         sleep 60; LAST_TICK=$(now); continue
+    fi
+    if [ "$VERIFIED" != 1 ]; then
+        # make no calls; recheck in a minute in case the app has resolved the numbers
+        write_status unverified
+        LOOPS=$((LOOPS + 1))
+        [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
+        if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        verify
+        [ "$VERIFIED" = 1 ] && { log "verified: $VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"; NEED_SESSION=verified; }
+        LAST_TICK=$(now); continue
     fi
 
     T=$(now)

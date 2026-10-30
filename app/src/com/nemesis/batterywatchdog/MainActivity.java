@@ -16,7 +16,11 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.content.DialogInterface;
 import java.io.BufferedReader;
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -48,6 +52,7 @@ public class MainActivity extends Activity {
     TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
     Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
     LinearLayout advBox;
+    Button overrideBtn;
     Chart chart;
 
     // auto-refresh while the screen is open (the service samples every few minutes)
@@ -168,6 +173,8 @@ public class MainActivity extends Activity {
         advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
         advBox.addView(button("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }));
         advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
+        overrideBtn = button("Unverified firmware: use built-in numbers\u2026", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
+        advBox.addView(overrideBtn);
         right.addView(advBox);
 
         right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
@@ -179,6 +186,7 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         refreshButtons();
+        startVerification();
     }
 
     @Override
@@ -194,6 +202,18 @@ public class MainActivity extends Activity {
         String upd = kv(status, "updated"), warn = kv(status, "warn");
         int p = parse(pct, -1);
         bigLabel.setTextColor(Color.WHITE);
+        boolean paused = "unverified".equals(state) || "unverified".equals(verifyState) || "interface_mismatch".equals(verifyState);
+        if (overrideBtn != null) overrideBtn.setVisibility("unverified".equals(verifyState) ? View.VISIBLE : View.GONE);
+        if (paused && !verified()) {
+            bigLabel.setText("Paused");
+            bigLabel.setTextColor(AMBER);
+            updLabel.setText("interface_mismatch".equals(verifyState)
+                ? "The car's telematics service isn't the one this package was built for, so nothing is read."
+                : "This firmware isn't verified, so nothing is read from the car. See Advanced \u2192 Diagnostics.");
+            parkLabel.setText(""); ctxLabel.setText(""); warnLabel.setText(""); sohLabel.setVisibility(View.GONE);
+            showSoh(-1);
+            return;
+        }
         if ("disabled".equals(state)) bigLabel.setText("Off");
         else if (p >= 0) {
             bigLabel.setText(fmt10(p) + "%");
@@ -251,7 +271,8 @@ public class MainActivity extends Activity {
 
     // SOH: tm_hscan_service 214 (0xd6) returns one raw byte, a health index (100 = new).
     int readSoh() {
-        String r = runRoot("service call tm_hscan_service 214").trim();
+        if (txSoh <= 0) return -1;                       // not verified on this firmware: don't call
+        String r = runRoot("service call tm_hscan_service " + txSoh).trim();
         int i = r.indexOf("Parcel(");
         if (i < 0) return -1;
         String[] w = r.substring(i + 7).trim().split("\\s+");
@@ -277,7 +298,8 @@ public class MainActivity extends Activity {
     }
 
     void readNow() {
-        String r = runRoot("service call tm_hscan_service 137").trim();
+        if (txSoc <= 0) { rawLabel.setText("Not verified on this firmware, so nothing was read."); return; }
+        String r = runRoot("service call tm_hscan_service " + txSoc).trim();
         String shown = r;
         int i = r.indexOf("Parcel(");
         if (i >= 0) {
@@ -289,13 +311,116 @@ public class MainActivity extends Activity {
         rawLabel.setText(shown);
     }
 
+    // ---- firmware verification ------------------------------------------------
+    // Transaction numbers can shift between firmware builds, so they're looked
+    // up BY NAME in this firmware's own ITM_HSCANService definition and saved
+    // (with the firmware id) for the service. Same rules as verify() in
+    // svc/watchdog.sh, which also has the hand-verified KNOWN_FW list.
+    static final String IFACE = "com.hkmc.telematics.hscan.tm_interface.ITM_HSCANService";
+    static final String KNOWN_FW = "eng.vmadmin.20260507.094910";   // 2023 Ioniq 5 SEL US, 260507
+    String fw = "", verifyState = "checking", verifySource = "";
+    int txSoc = -1, txHv = -1, txSoh = -1;
+
+    void startVerification() {
+        new Thread(new Runnable() { public void run() {
+            final String result = verify();
+            handler.post(new Runnable() { public void run() { verifyState = result; refreshData(); } });
+        } }).start();
+    }
+
+    /** Returns resolved | saved | known_firmware | override | interface_mismatch | unverified. */
+    String verify() {
+        txSoc = txHv = txSoh = -1;
+        fw = runRoot("getprop ro.build.version.incremental").trim();
+        String svcList = runRoot("service list 2>/dev/null");
+        if (!svcList.contains("tm_hscan_service: [" + IFACE + "]")) return "interface_mismatch";
+
+        // 1. numbers already resolved (or overridden) for exactly this firmware
+        String saved = runRoot("cat " + STATE + "/txn 2>/dev/null");
+        if (fw.length() > 0 && fw.equals(kv(saved, "fw")) && parse(kv(saved, "soc"), -1) > 0) {
+            txSoc = parse(kv(saved, "soc"), -1); txHv = parse(kv(saved, "hv"), -1); txSoh = parse(kv(saved, "soh"), -1);
+            verifySource = kv(saved, "source");
+            return "manual-override".equals(verifySource) ? "override" : "saved";
+        }
+
+        // 2. resolve by name from the firmware's own interface definition
+        String files = runRoot("grep -l 'ITM_HSCANService' /system/framework/*.odex /system/app/*.odex "
+                + "/system/priv-app/*.odex /vendor/framework/*.odex 2>/dev/null");
+        for (String path : files.split("\n")) {
+            path = path.trim();
+            if (path.length() == 0 || !path.startsWith("/")) continue;
+            Map<String, Integer> m = readTransactions(path);
+            Integer soc = m.get("getBatSoc");
+            if (soc == null) continue;
+            txSoc = soc;
+            Integer hv = m.get("remainBatteryPercentage"), soh = m.get("getXEV_Bms_GDS_SOH");
+            txHv = hv == null ? -1 : hv; txSoh = soh == null ? -1 : soh;
+            verifySource = path;
+            saveTxn(verifySource);
+            return "resolved";
+        }
+
+        // 3. hand-verified firmware
+        if (KNOWN_FW.equals(fw)) { txSoc = 137; txHv = 74; txSoh = 214; verifySource = "built-in"; return "known_firmware"; }
+        return "unverified";
+    }
+
+    Map<String, Integer> readTransactions(String path) {
+        try {
+            return TxnResolver.transactions(new File(path), TxnResolver.STUB);
+        } catch (Exception e) {
+            // not readable by this app's uid: copy it via root into the app's cache first
+            try {
+                File tmp = new File(getCacheDir(), "resolve.odex");
+                runRoot("cat '" + path + "' > '" + tmp.getAbsolutePath() + "' && chmod 644 '" + tmp.getAbsolutePath() + "'");
+                Map<String, Integer> m = TxnResolver.transactions(tmp, TxnResolver.STUB);
+                tmp.delete();
+                return m;
+            } catch (Exception e2) {
+                return new HashMap<String, Integer>();
+            }
+        }
+    }
+
+    void saveTxn(String source) {
+        // plain echo: KitKat has no printf binary and mksh R43 has no printf builtin
+        String f = STATE + "/txn";
+        runRoot("mkdir -p " + STATE
+            + "; echo 'fw=" + fw + "' > " + f
+            + "; echo 'soc=" + txSoc + "' >> " + f
+            + "; echo 'hv=" + (txHv > 0 ? txHv : "") + "' >> " + f
+            + "; echo 'soh=" + (txSoh > 0 ? txSoh : "") + "' >> " + f
+            + "; echo 'source=" + source + "' >> " + f);
+    }
+
+    void confirmOverride() {
+        new AlertDialog.Builder(this).setTitle("Use built-in numbers on this firmware?")
+            .setMessage("This firmware (" + fw + ") hasn't been verified, and Battery Watchdog couldn't confirm the "
+                + "transaction numbers by name. On a different firmware the same numbers can reach a different "
+                + "function, including ones that reset or change settings.\n\nOnly continue if you've run the USB "
+                + "probe on this car and its txn 137 / 74 / 214 values look like a 12V %, a main battery %, and a "
+                + "health index (see docs/TECHNICAL.md).")
+            .setPositiveButton("I've checked, use them", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) {
+                    txSoc = 137; txHv = 74; txSoh = 214; saveTxn("manual-override");
+                    verifyState = "override"; verifySource = "manual-override";
+                    toast("Saved. The monitor starts within a minute."); refreshData();
+                } })
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    boolean verified() { return txSoc > 0; }
+
     static final String SVC_ID = "battery.watchdog/watch";
     static final String SVC_LOG = "/data/nemesis/logs/battery.watchdog/watch.log";
     static final String SVC_SCRIPT = "/data/nemesis/apps/battery.watchdog/svc/watchdog.sh";
 
     void showDiagnostics() {
         StringBuilder d = new StringBuilder();
-        d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n\n");
+        d.append("service: ").append(runRoot(NEM + " service status " + SVC_ID + " 2>&1").trim()).append("\n");
+        d.append("firmware: ").append(fw).append("\n");
+        d.append("verification: ").append(verifyState).append(verifySource.length() > 0 ? " (" + verifySource + ")" : "")
+            .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n\n");
         // newest log lines first, so the latest error is at the top
         String log = runRoot("cat " + SVC_LOG + " 2>&1");
         if (log.trim().length() == 0 || log.contains("No such file"))
@@ -340,6 +465,7 @@ public class MainActivity extends Activity {
     // Runs the installed monitor script directly as root for a couple of loops
     // (BWD_TEST shortens the timings), bypassing NEMESIS. Real readings are saved.
     void testRun() {
+        if (!verified()) { toast("Not verified on this firmware, so the test run is disabled."); return; }
         toast("Running the monitor for about 10 seconds\u2026");
         String out = runRoot("cd " + STATE + " && BWD_TEST=1 BWD_TEST_LOOPS=3 /system/bin/sh " + SVC_SCRIPT
                 + " > " + STATE + "/testrun.log 2>&1; echo \"exit code $?\"; cat " + STATE + "/testrun.log");

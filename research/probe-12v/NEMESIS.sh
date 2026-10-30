@@ -1,5 +1,11 @@
 #!/system/bin/sh
-# Battery Watchdog - 12V verification probe (READ-ONLY getters only).
+# Battery Watchdog - 12V verification probe.
+#
+# WARNING: this calls transactions 137, 214, 74 and 211 by NUMBER. They are
+# read-only getters on the reference firmware (2023 Ioniq 5 SEL US, 260507),
+# but numbers can shift on other firmware and reach a setter or a reset.
+# On any other firmware, first let the Battery Watchdog app resolve the
+# numbers by name, or check them offline (docs/TECHNICAL.md) before running this.
 # Answers: is hscan 0x89 (getBatSoc) really the 12V state of charge, is it
 # an int or a float, and what scale? Also records SOH (0xd6) for reference.
 #

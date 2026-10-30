@@ -13,8 +13,9 @@ on every drive and tells you when something looks wrong.
 <sub>Mockup of the app on the 1920×720 Gen5W screen, with sample data.</sub>
 
 > Unofficial. Not affiliated with Hyundai, Kia, Genesis or HKMC. Use at your
-> own risk. Battery Watchdog only **reads** values from the car; it never
-> sends commands to it.
+> own risk. Battery Watchdog only **reads** values from the car, and it
+> doesn't read anything until it has confirmed it's talking to the right
+> functions on your firmware (see [Safety](#safety)).
 
 ## Features
 
@@ -41,9 +42,10 @@ All data stays on the head unit.
 |---|---|---|
 | 2023 Hyundai Ioniq 5 SEL (US) | 260507 | Working |
 
-Other Gen5W cars may work if their firmware provides the same values. Run the
-probe described in [docs/TECHNICAL.md](docs/TECHNICAL.md#porting-to-another-car-or-firmware)
-to check, and please open an issue with the result so the table can grow.
+Other Gen5W cars may work if their firmware provides the same values. On
+first launch the app checks your firmware automatically. If it shows
+**Paused**, see [Safety](#safety), and please open an issue with your car,
+firmware and what Diagnostics shows so the table can grow.
 
 ## Requirements
 
@@ -115,7 +117,35 @@ instrument cluster.
 - Cold lowers 12V readings. A drop on a freezing night is less worrying than
   the same drop on a mild one.
 
+## Safety
+
+The car's values are read by calling numbered functions on its telematics
+service. Those numbers are positions in a list that can change between
+firmware versions, and on another firmware the same number could reach a
+function that changes or resets something. So Battery Watchdog never uses a
+number it hasn't checked:
+
+1. **On first launch, the app looks the functions up by name** (`getBatSoc`,
+   `remainBatteryPercentage`, `getXEV_Bms_GDS_SOH`) in your firmware's own
+   definition of the telematics service, and saves the numbers it finds
+   together with your firmware version.
+2. If that isn't possible, it uses built-in numbers **only on firmware that has
+   been verified by hand** (see [Compatibility](#compatibility)).
+3. Otherwise it shows **Paused** and reads nothing. Under **Advanced** there's
+   an option to use the built-in numbers anyway, for people who have checked
+   their car as described in [docs/TECHNICAL.md](docs/TECHNICAL.md#porting-to-another-car-or-firmware).
+
+It also checks that the telematics service is the expected one before any
+call, and after a firmware update it checks again before reading anything.
+
+Other things to know: it runs as root (NEMESIS services do) but only writes
+to its own folders; it doesn't keep the head unit awake, so it adds no drain
+on the 12V battery; and the 12V figure is the car's estimate, so don't rely on
+it alone if the car shows its own battery warnings.
+
 ## Troubleshooting
+
+The app shows **Paused**: your firmware couldn't be verified; see [Safety](#safety).
 
 The app shows **Waiting…** and no reading:
 
@@ -165,7 +195,8 @@ package/                 the NEMESIS package
   svc/watchdog.sh        the monitor (root, read-only)
   scripts/post.sh        default settings; restarts the service after install
 app/                     the on-screen app (Java, no resources)
-research/probe-12v/      USB probe for checking a new car or firmware
+research/odex-dump/      read-only USB dump of firmware files, for offline checks
+research/probe-12v/      USB probe that reads the values (verified firmware only)
 tests/                   service test with mocked car services
 tools/                   APK build and packaging scripts
 docs/TECHNICAL.md        data sources, internals, porting notes

@@ -32,7 +32,7 @@ jobs:
 
       - name: Check shell scripts parse (sh and mksh)
         run: |
-          for f in package/svc/*.sh package/scripts/*.sh research/probe-12v/NEMESIS.sh; do
+          for f in package/svc/*.sh package/scripts/*.sh research/*/NEMESIS.sh; do
             sh -n "$f"; mksh -n "$f"
           done
 
@@ -65,6 +65,9 @@ jobs:
           set -o pipefail
           ANDROID_SDK="$ANDROID_SDK_ROOT" tools/build_apk.sh 2>&1 | tee build.log \
             || { tail -n 15 build.log | while IFS= read -r l; do echo "::error title=build_apk::$l"; done; exit 1; }
+
+      - name: Test the transaction-number resolver against a real DEX
+        run: BT="$ANDROID_SDK_ROOT/build-tools/30.0.3" tests/test_resolver.sh
 
       - name: Build NEMESIS package + USB bundle
         run: |
