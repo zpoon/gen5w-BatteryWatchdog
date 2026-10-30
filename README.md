@@ -13,7 +13,7 @@ won't start.
 **Read-only.** The service only calls getters on the telematics hscan service.
 It never writes to the car.
 
-> **Status: data source checked on one car; package not yet run on a car.**
+> **Status: working on a 2023 Ioniq 5 SEL (firmware 260507) as of v0.2.7.**
 > Probe on a **2023 Ioniq 5 SEL (US), head-unit firmware 260507**, car on and parked:
 >
 > | txn | getter | reply | meaning |
@@ -115,6 +115,11 @@ State lives in `/data/nemesis/state/battery.watchdog/`:
   display wakes up, or when the wall clock jumps by `gap_s` (default 10 min)
   because the unit was asleep. The "end" of a drive is the last sample, so it
   can be up to `interval_s` before you turned the car off.
+- If NEMESIS's log shows `giving up on <package>/<service>`, it has stopped
+  launching that service after earlier crashes. On this car that persisted
+  across updates **and** a head-unit reboot. Renaming the service (here
+  `monitor` → `watch`) gave it a clean slate. Use **Advanced → Test run** to
+  check the script itself works outside NEMESIS.
 - Service output: `nemesis log service battery.watchdog/watch`, or the app's
   **Advanced → Diagnostics**.
 - The IBS (battery sensor) SOC estimate can jump after the car sleeps or
