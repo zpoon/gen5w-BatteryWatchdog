@@ -131,9 +131,11 @@ and a photo of the top of Diagnostics.
 
 ## Uninstall
 
-Remove `battery.watchdog` from the NEMESIS manager (or run
-`nemesis uninstall battery.watchdog`). Settings and history are stored in
-`/data/nemesis/state/battery.watchdog/` and may remain after uninstalling.
+In the NEMESIS manager, open **Packages**, select **Battery Watchdog**
+(`battery.watchdog`) and tap **Uninstall**. From a shell,
+`nemesis uninstall battery.watchdog` does the same. Settings and history are
+stored in `/data/nemesis/state/battery.watchdog/` and may remain after
+uninstalling.
 
 ## Building from source
 
