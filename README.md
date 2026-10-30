@@ -80,12 +80,19 @@ The screen has three columns:
 
 - **Left:** the 12V charge (green, or amber below your warning level), how
   long the car was parked and how the 12V changed meanwhile, main battery
-  charge, outside temperature, the latest warning, and the HV battery health
-  box.
-- **Middle:** recent readings. White dots mark the start of each drive and the
-  amber line is your warning level. A healthy pattern is a small dip at each
-  start and a recovery during the drive.
-- **Right:** settings.
+  charge, outside temperature, the latest warning, the HV battery health box,
+  and a **last 7 days** summary: number of drives, lowest start, average
+  parked drain per day, and how many times the car recharged the 12V while
+  parked.
+- **Middle:** your last 30 drives. Each drive is a bar from the 12V at the
+  start (white dot) to the end (blue dot); a healthy drive ends level or
+  higher. The dashed line between drives is the parked time: amber if it
+  dropped past your warning amount, green if the car recharged it. The scale
+  adjusts to your readings and always shows the warning line.
+- **Right:** settings, with **Save** at the top.
+
+A stop counts as a new drive only if the screen was off for 10 minutes or
+more, so quick stops don't clutter the history.
 
 | Setting | Default | What it does |
 |---|---|---|

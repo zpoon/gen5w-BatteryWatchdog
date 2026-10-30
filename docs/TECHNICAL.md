@@ -107,9 +107,12 @@ between drives (QuickBoot), so one service process sees many drives.
 
 - Every `poll_s` (15 s) it checks the display state with `dumpsys power`
   (detector from hkmc-factory82).
-- A **new drive** (session) starts when the display goes from off to on, when
-  the wall clock jumps by `gap_s` (10 min) because the unit was asleep, or when
-  the service starts.
+- A **new drive** (session) starts when the display comes back on after being
+  off for at least `min_off_s` (10 min; shorter stops continue the same
+  drive), when the wall clock jumps by `gap_s` (defaults to `min_off_s`)
+  because the unit was asleep, or when the service starts. The app also
+  merges drives separated by less than `min_off_s` when it draws the chart
+  and the 7-day summary, which tidies older history.
 - At a session start it waits `settle_s` (30 s), samples, and compares with the
   previous session: low 12V, drop while parked (last sample of the previous
   drive → first sample of this one, with time parked and a per-day rate), and
@@ -156,7 +159,7 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 | `warnings` | every warning raised, timestamped |
 | `status` | latest state, read by the app |
 | `sess_start`, `last` | first and most recent sample of the current drive |
-| one-value files | settings: `enabled`, `warn_pct`, `drop_pct`, `interval_s`, `toast_start`, `decode`, `scale_x10`, and optional `poll_s`, `gap_s`, `settle_s`, `max_lines` |
+| one-value files | settings: `enabled`, `warn_pct`, `drop_pct`, `interval_s`, `toast_start`, `decode`, `scale_x10`, and optional `min_off_s`, `poll_s`, `gap_s`, `settle_s`, `max_lines` |
 
 `pct10` and `hv10` are tenths of a percent (`725` = 72.5 %).
 

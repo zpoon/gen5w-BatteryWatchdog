@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
 
     LinearLayout sohBox;
     TextView sohTitle, sohValue;
-    TextView parkLabel, ctxLabel;
+    TextView parkLabel, ctxLabel, sumLabel;
     TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
     Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
     LinearLayout advBox;
@@ -129,13 +129,18 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         sp.setMargins(0, dp(4), 0, dp(4));
         left.addView(sohBox, sp);
+        left.addView(section("Last 7 days"));
+        sumLabel = new TextView(this);
+        sumLabel.setTextColor(Color.WHITE);
+        sumLabel.setTextSize(15);
+        left.addView(sumLabel);
         ScrollView leftScroll = new ScrollView(this);
         leftScroll.addView(left);
 
         // ---- middle: chart -------------------------------------------------
         LinearLayout mid = column();
         mid.setPadding(dp(16), 0, dp(16), 0);
-        mid.addView(section("Recent readings · dot = start of a drive"));
+        mid.addView(section("Recent drives \u00B7 12V at start (white) and end (blue) \u00B7 dashed = parked"));
         chart = new Chart(this, dp(1));
         mid.addView(chart, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -145,6 +150,8 @@ public class MainActivity extends Activity {
         right.setOrientation(LinearLayout.VERTICAL);
         rightScroll.addView(right);
 
+        right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
+        right.addView(hint("Applies from the next drive."));
         right.addView(section("Warnings"));
         enBtn = button("", new View.OnClickListener() { public void onClick(View v) { enabled = !enabled; refreshButtons(); } });
         right.addView(enBtn);
@@ -181,8 +188,7 @@ public class MainActivity extends Activity {
         advBox.addView(overrideBtn);
         right.addView(advBox);
 
-        right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
-        right.addView(hint("Applies on the next start of the car."));
+        right.setPadding(0, 0, 0, dp(56));   // keep the last button clear of the screen's rounded corner
 
         root.addView(leftScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
         root.addView(mid, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
@@ -259,18 +265,77 @@ public class MainActivity extends Activity {
         warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "No warnings");
         warnLabel.setTextColor(warn.length() > 0 ? AMBER : MUTED);
 
-        // last ~300 log rows: epoch,event,raw,pct10,soh
-        String log = runRoot("cat " + STATE + "/log.csv 2>/dev/null");
-        List<long[]> pts = new ArrayList<long[]>();
-        for (String line : log.split("\n")) {
-            String[] f = line.split(",");
+        List<long[]> drives = loadDrives(status);
+        chart.setData(drives.size() > 30 ? drives.subList(drives.size() - 30, drives.size()) : drives, warnPct * 10, dropPct * 10);
+        sumLabel.setText(summary(drives));
+    }
+
+    /**
+     * Drives as {start_epoch, end_epoch, start_pct10, end_pct10}, oldest first:
+     * finished drives from 'sessions' plus the current one. Drives separated
+     * by a stop shorter than min_off_s (default 10 min) are merged, which also
+     * tidies history recorded before short stops were ignored.
+     */
+    List<long[]> loadDrives(String status) {
+        List<long[]> out = new ArrayList<long[]>();
+        long minOff = Math.max(60, readInt("min_off_s", 600));
+        for (String line : runRoot("cat " + STATE + "/sessions 2>/dev/null").split("\n")) {
+            String[] f = line.trim().split("\\s+");
             if (f.length < 4) continue;
-            long t = parseL(f[0], 0); int v = parse(f[3], -1);
-            if (t <= 0 || v < 0) continue;
-            pts.add(new long[] { t, v, "start".equals(f[1]) ? 1 : 0 });
+            long st = parseL(f[0], 0); int min = parse(f[1], -1), sp = parse(f[2], -1), ep = parse(f[3], -1);
+            if (st <= 0 || min < 0 || sp < 0 || ep < 0) continue;
+            add(out, new long[] { st, st + min * 60L, sp, ep }, minOff);
         }
-        if (pts.size() > 300) pts = pts.subList(pts.size() - 300, pts.size());
-        chart.setData(pts, warnPct * 10);
+        String[] ss = kv(status, "session_start").split(" ");
+        long cst = ss.length > 0 ? parseL(ss[0], 0) : 0;
+        int csp = ss.length > 1 ? parse(ss[1], -1) : -1;
+        int cur = parse(kv(status, "pct10"), -1);
+        long upd = parseL(kv(status, "updated"), 0);
+        if (cst > 0 && csp >= 0 && cur >= 0 && upd >= cst
+                && (out.isEmpty() || cst > out.get(out.size() - 1)[0])) {
+            add(out, new long[] { cst, upd, csp, cur }, minOff);
+        }
+        return out;
+    }
+
+    static void add(List<long[]> l, long[] d, long minOff) {
+        if (!l.isEmpty()) {
+            long[] p = l.get(l.size() - 1);
+            if (d[0] - p[1] < minOff && d[0] >= p[0]) { p[1] = Math.max(p[1], d[1]); p[3] = d[3]; return; }
+        }
+        l.add(d);
+    }
+
+    /** Last-7-days summary: lowest start, parked drain per day, parked recharges. */
+    String summary(List<long[]> drives) {
+        long now = System.currentTimeMillis() / 1000, from = now - 7 * 86400L;
+        int lowest = Integer.MAX_VALUE, n = 0, recharges = 0;
+        long parkedMin = 0, parkedDrop = 0;
+        for (int i = 0; i < drives.size(); i++) {
+            long[] d = drives.get(i);
+            if (d[0] < from) continue;
+            n++;
+            lowest = (int) Math.min(lowest, d[2]);
+            if (i == 0) continue;
+            long[] p = drives.get(i - 1);
+            long gap = (d[0] - p[1]) / 60;
+            if (gap < 60) continue;                         // ignore short parks for the rate
+            long drop = p[3] - d[2];                        // positive = fell while parked
+            if (drop <= -10) recharges++;                   // rose 1+ pt: the car topped it up
+            parkedMin += gap; parkedDrop += drop;
+        }
+        if (n == 0) return "No drives recorded yet.";
+        StringBuilder b = new StringBuilder();
+        b.append(n).append(n == 1 ? " drive" : " drives").append(", lowest start ").append(fmt10(lowest)).append("%\n");
+        if (parkedMin >= 60) {
+            long rate = parkedDrop * 1440 / parkedMin;      // tenths of a point per day
+            b.append("Parked: ").append(rate > 0 ? "\u2212" + fmt10((int) rate) : rate < 0 ? "+" + fmt10((int) -rate) : "0.0")
+             .append(" pts/day on average\n");
+        } else {
+            b.append("Parked: not enough parked time yet\n");
+        }
+        b.append("Recharged while parked: ").append(recharges).append(recharges == 1 ? " time" : " times");
+        return b.toString();
     }
 
     // SOH: tm_hscan_service 214 (0xd6) returns one raw byte, a health index (100 = new).
@@ -375,7 +440,7 @@ public class MainActivity extends Activity {
         return "unverified";
     }
 
-    static final String APP_VERSION = "0.5.0";   // keep in step with AndroidManifest versionName
+    static final String APP_VERSION = "0.5.1";   // keep in step with AndroidManifest versionName
     static final String[] SEARCH_DIRS = { "/system/framework", "/system/app", "/system/priv-app",
             "/vendor/framework", "/vendor/app", "/system/vendor/app", "/system/vendor/framework" };
     static final byte[] NEEDLE = "tm_interface/ITM_HSCANService$Stub;".getBytes();
@@ -770,48 +835,81 @@ public class MainActivity extends Activity {
 
     // ---- chart ----------------------------------------------------------------
     static class Chart extends View {
-        List<long[]> pts = new ArrayList<long[]>();
-        int warn10 = 600;
+        List<long[]> drives = new ArrayList<long[]>();    // {start, end, start_pct10, end_pct10}
+        int warn10 = 600, drop10 = 150;
         final float d;
-        final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG), dot = new Paint(Paint.ANTI_ALIAS_FLAG),
+        final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG), startDot = new Paint(Paint.ANTI_ALIAS_FLAG),
+                endDot = new Paint(Paint.ANTI_ALIAS_FLAG), park = new Paint(Paint.ANTI_ALIAS_FLAG),
+                parkBad = new Paint(Paint.ANTI_ALIAS_FLAG), parkUp = new Paint(Paint.ANTI_ALIAS_FLAG),
                 grid = new Paint(), warnP = new Paint(), text = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         Chart(Context c, float density) {
             super(c);
             d = density;
-            line.setColor(ACCENT); line.setStrokeWidth(3 * d);
-            dot.setColor(Color.WHITE);
+            bar.setColor(ACCENT); bar.setStrokeWidth(4 * d);
+            startDot.setColor(Color.WHITE);
+            endDot.setColor(ACCENT);
+            park.setColor(Color.rgb(110, 118, 128)); park.setStrokeWidth(2 * d);
+            parkBad.setColor(AMBER); parkBad.setStrokeWidth(2 * d);
+            parkUp.setColor(GREEN); parkUp.setStrokeWidth(2 * d);
             grid.setColor(Color.rgb(50, 55, 62)); grid.setStrokeWidth(d);
             warnP.setColor(AMBER); warnP.setStrokeWidth(2 * d);
-            text.setColor(MUTED); text.setTextSize(14 * d);
+            text.setColor(MUTED); text.setTextSize(13 * d);
         }
 
-        void setData(List<long[]> p, int w) { pts = p; warn10 = w; invalidate(); }
+        void setData(List<long[]> dr, int w, int drop) { drives = dr; warn10 = w; drop10 = drop; invalidate(); }
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), left = 44 * d, top = 10 * d, bottom = h - 10 * d;
-            // y range: 30-100 % (a healthy 12V lives up there); drop the floor if data goes lower
-            int lo = 30;
-            for (long[] p : pts) while (p[1] < lo * 10 && lo > 0) lo -= 10;
+            float w = getWidth(), h = getHeight(), left = 44 * d, top = 10 * d, bottom = h - 26 * d;
+            // scale: from 5 points below the lowest value (or the warning line) up to 100 %
+            long lo10 = warn10;
+            for (long[] r : drives) lo10 = Math.min(lo10, Math.min(r[2], r[3]));
+            int lo = (int) Math.max(0, ((lo10 - 50) / 100) * 10);
             float span = 100 - lo;
             for (int pct = lo; pct <= 100; pct += 10) {
                 float y = bottom - (bottom - top) * (pct - lo) / span;
                 c.drawLine(left, y, w, y, grid);
-                if ((pct - lo) % 20 == 0 || pct == 100) c.drawText(pct + "%", 0, y + 5 * d, text);
+                c.drawText(pct + "%", 0, y + 5 * d, text);
             }
             float wy = bottom - (bottom - top) * (warn10 / 10f - lo) / span;
             c.drawLine(left, wy, w, wy, warnP);
-            if (pts.size() < 2) { c.drawText("Not enough data yet. Readings appear after a drive or two.", left + 12 * d, h / 2, text); return; }
-            // x = sample index (drives are far apart in time, so time scaling hides detail)
-            float step = (w - left - 10 * d) / (pts.size() - 1);
-            float px = 0, py = 0;
-            for (int i = 0; i < pts.size(); i++) {
-                long[] p = pts.get(i);
-                float x = left + i * step, y = bottom - (bottom - top) * (p[1] / 10f - lo) / span;
-                if (i > 0 && p[2] == 0) c.drawLine(px, py, x, y, line);   // break the line at each new drive
-                if (p[2] == 1) c.drawCircle(x, y, 5 * d, dot);
-                px = x; py = y;
+            if (drives.isEmpty()) { c.drawText("No drives yet. They appear here as you drive.", left + 12 * d, h / 2, text); return; }
+
+            int n = drives.size();
+            float slot = (w - left - 8 * d) / Math.max(n, 6);
+            SimpleDateFormat day = new SimpleDateFormat("MMM d", Locale.US);
+            String lastLabel = "";
+            float lastLabelX = -1000, px = 0, py = 0;
+            for (int i = 0; i < n; i++) {
+                long[] r = drives.get(i);
+                float x = left + slot * (i + 0.5f);
+                float ys = bottom - (bottom - top) * (r[2] / 10f - lo) / span;
+                float ye = bottom - (bottom - top) * (r[3] / 10f - lo) / span;
+                if (i > 0) {   // parked: previous end -> this start, dashed
+                    long change = r[2] - drives.get(i - 1)[3];
+                    Paint pp = change <= -drop10 ? parkBad : change >= 10 ? parkUp : park;
+                    dashed(c, px, py, x, ys, pp);
+                }
+                c.drawLine(x, ys, x, ye, bar);
+                c.drawCircle(x, ys, 5 * d, startDot);
+                c.drawCircle(x, ye, 5 * d, endDot);
+                px = x; py = ye;
+                String lab = day.format(new java.util.Date(r[0] * 1000));
+                if (!lab.equals(lastLabel) && x - lastLabelX > 60 * d) {
+                    c.drawText(lab, x - 18 * d, h - 6 * d, text);
+                    lastLabel = lab; lastLabelX = x;
+                }
+            }
+        }
+
+        static void dashed(Canvas c, float x1, float y1, float x2, float y2, Paint p) {
+            float dx = x2 - x1, dy = y2 - y1, len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len < 1) return;
+            float step = 8, on = 5;
+            for (float t = 0; t < len; t += step) {
+                float a = t / len, b = Math.min(t + on, len) / len;
+                c.drawLine(x1 + dx * a, y1 + dy * a, x1 + dx * b, y1 + dy * b, p);
             }
         }
     }

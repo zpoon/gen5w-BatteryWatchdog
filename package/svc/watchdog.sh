@@ -18,7 +18,7 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.5.0
+VERSION=0.5.1
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
@@ -270,9 +270,10 @@ load_cfg() {
     TOAST_START=$(cfg toast_start 0)
     MAX_LINES=$(cfg max_lines 4000)
     POLL=$(cfg poll_s 15)
-    GAP=$(cfg gap_s 600)          # wall-clock jump that means "the unit was asleep"
+    MIN_OFF=$(cfg min_off_s 600)  # screen off at least this long = parked = a new drive
+    GAP=$(cfg gap_s "$MIN_OFF")   # wall-clock jump that means "the unit was asleep"
     [ "$INTERVAL" -lt 30 ] 2>/dev/null && INTERVAL=30
-    if [ -n "$BWD_TEST" ]; then INTERVAL=${BWD_TEST_INTERVAL:-2}; POLL=1; SETTLE=0; fi
+    if [ -n "$BWD_TEST" ]; then INTERVAL=${BWD_TEST_INTERVAL:-2}; POLL=1; SETTLE=0; MIN_OFF=${BWD_TEST_MIN_OFF:-2}; GAP=600; fi
 }
 
 # ---- a new drive: compare with the previous one and warn -----------------------
@@ -402,6 +403,7 @@ LAST_SAMPLE=0
 SESS_T=""; SESS_P=""; PREV_LINE=""; WARN_TEXT=""; S_PCT10=-1; S_RAW=""
 PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
 NEED_SESSION=service_start
+OFF_T=0
 LOOPS=0
 
 while :; do
@@ -423,7 +425,16 @@ while :; do
 
     T=$(now)
     DISP=$(display_state)
-    if [ "$PREV_DISP" = off ] && [ "$DISP" != off ] && [ -z "$NEED_SESSION" ]; then NEED_SESSION=display_wake; fi
+    [ "$PREV_DISP" != off ] && [ "$DISP" = off ] && OFF_T=$T
+    if [ "$PREV_DISP" = off ] && [ "$DISP" != off ] && [ -z "$NEED_SESSION" ]; then
+        # a short stop (screen off for less than min_off_s) continues the same drive
+        _off=$((T - OFF_T))
+        if [ "$CLOCK_OK" != 1 ] || [ "$OFF_T" -le 0 ] || [ "$_off" -ge "$MIN_OFF" ]; then
+            NEED_SESSION=display_wake
+        else
+            log "short stop: screen off ${_off}s, same drive"
+        fi
+    fi
     if [ "$CLOCK_OK" = 1 ] && [ $((T - LAST_TICK)) -ge "$GAP" ]; then
         _gap=$((T - LAST_TICK))
         [ -z "$NEED_SESSION" ] && NEED_SESSION="resume_after_${_gap}s"
