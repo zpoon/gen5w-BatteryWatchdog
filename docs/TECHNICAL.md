@@ -52,9 +52,12 @@ requests). So the numbers are never used blindly:
    `TRANSACTION_getXEV_Bms_GDS_SOH` constants from
    `ITM_HSCANService$Stub`. It saves them to `txn` with the firmware id
    (`ro.build.version.incremental`). No binder calls are needed for this.
-2. **Hand-verified firmware (app and service).** `KNOWN_FW` in
-   `svc/watchdog.sh` and `MainActivity.java`. Currently
-   `eng.vmadmin.20260507.094910` (2023 Ioniq 5 SEL US, 260507): 137 / 74 / 214.
+2. **Hand-verified firmware (app and service).** `package/known_firmware.txt`,
+   one line per build with its own numbers:
+   `<ro.build.version.incremental> <soc> <hv> <soh>  # car, firmware`
+   (`-` for a missing one). Both the service and the app read this one file
+   from the installed package. Currently
+   `eng.vmadmin.20260507.094910  137  74  214` (2023 Ioniq 5 SEL US, 260507).
 3. **Manual override (app).** Advanced → "use built-in numbers…", with a
    warning; saved to `txn` as `source=manual-override` for this firmware only.
 
@@ -122,26 +125,39 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 
 ## Porting to another car or firmware
 
+For owners:
+
 1. Install the package and open the app. If Diagnostics shows
    `verification: resolved (…)`, the numbers were found by name and the
-   monitor runs; skip to step 4.
+   monitor runs. Please still file a
+   [firmware report](../../issues/new?template=firmware-report.yml) so the
+   compatibility table grows.
 2. If it shows **Paused**, check the numbers **offline**, without calling them:
-   copy the ODEX files to a USB drive with the read-only dump probe in
-   `research/odex-dump/` (put its two files at the root of a USB drive, insert,
-   approve, wait a few minutes; files land in `odex-dump/`), then search them on a computer with hkmc-coldstart-heat's `dexodex.py` for
-   `ITM_HSCANService$Stub` and its `TRANSACTION_getBatSoc`,
-   `TRANSACTION_remainBatteryPercentage` and `TRANSACTION_getXEV_Bms_GDS_SOH`.
-3. Only if they're 137, 74 and 214, use Advanced → "use built-in numbers…".
-   (The USB probe in `research/probe-12v/` calls those numbers directly, so
-   only run it once you know they're the getters.)
-4. Please open an issue with your car, firmware (`ro.build.version.incremental`)
-   and the numbers, so the firmware can be added to `KNOWN_FW` and the
-   compatibility table.
+   - put the two files from `research/odex-dump/` on the root of a USB drive,
+     insert it with the car on and parked, approve, and wait a few minutes
+     (files land in `odex-dump/` on the drive; nothing is sent to the car);
+   - on a computer, run `python3 tools/check_firmware.py <drive>/odex-dump`.
+   - Paste its output into a firmware report. Don't attach the firmware files.
 
-The probe's raw replies decode like this: a small number such as `00000053`
-is an integer (decode = Integer, scale = 1 %, or 0.5 % if it reads about
-double); something like `42b40000` is a float (decode = Float); `00000000`
-every time means the firmware doesn't fill it.
+For maintainers, adding a build:
+
+1. Take the `known_firmware.txt line:` printed by `check_firmware.py` and
+   fill in the car and firmware version in the comment.
+2. Sanity-check: `getBatSoc` must be present; the interface line must say
+   `tm_hscan_service is …ITM_HSCANService`.
+3. Append the line to `package/known_firmware.txt`, add a row to the README
+   compatibility table, bump the version (`app/AndroidManifest.xml`,
+   `VERSION=` in `svc/watchdog.sh`), push, and publish a release. CI runs the
+   service and resolver tests on every push.
+
+Builds where the app reports `resolved` don't need a `known_firmware.txt`
+entry (the lookup already works), but one doesn't hurt as a fallback.
+
+Only after the numbers are confirmed should anyone run `research/probe-12v/`,
+which calls them directly. Its raw replies decode like this: a small number
+such as `00000053` is an integer (decode = Integer, scale = 1 %, or 0.5 % if
+it reads about double); something like `42b40000` is a float (decode = Float);
+`00000000` every time means the firmware doesn't fill it.
 
 ## NEMESIS "giving up"
 
@@ -157,6 +173,7 @@ script directly, outside NEMESIS, to tell a script problem from a NEMESIS one.
 ```
 tests/test_service.sh            # sh
 tests/test_service.sh mksh       # any shell
+BT=<build-tools dir with dx> tests/test_resolver.sh   # TxnResolver + check_firmware.py
 ```
 
 It mocks `service`, `am`, `dumpsys` and `logcat`, runs two drives (83 % → 64 %

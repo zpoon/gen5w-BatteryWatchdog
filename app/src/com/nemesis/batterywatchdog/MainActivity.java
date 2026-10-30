@@ -315,9 +315,9 @@ public class MainActivity extends Activity {
     // Transaction numbers can shift between firmware builds, so they're looked
     // up BY NAME in this firmware's own ITM_HSCANService definition and saved
     // (with the firmware id) for the service. Same rules as verify() in
-    // svc/watchdog.sh, which also has the hand-verified KNOWN_FW list.
+    // svc/watchdog.sh; hand-verified builds are listed in known_firmware.txt.
     static final String IFACE = "com.hkmc.telematics.hscan.tm_interface.ITM_HSCANService";
-    static final String KNOWN_FW = "eng.vmadmin.20260507.094910";   // 2023 Ioniq 5 SEL US, 260507
+    static final String KNOWN_FILE = "/data/nemesis/apps/battery.watchdog/known_firmware.txt";
     String fw = "", verifyState = "checking", verifySource = "";
     int txSoc = -1, txHv = -1, txSoh = -1;
 
@@ -361,7 +361,18 @@ public class MainActivity extends Activity {
         }
 
         // 3. hand-verified firmware
-        if (KNOWN_FW.equals(fw)) { txSoc = 137; txHv = 74; txSoh = 214; verifySource = "built-in"; return "known_firmware"; }
+        // one line per build: <fw> <soc> <hv> <soh>  # comment ("-" = not available)
+        for (String line : runRoot("cat " + KNOWN_FILE + " 2>/dev/null").split("\n")) {
+            String l = line.trim();
+            if (l.length() == 0 || l.startsWith("#")) continue;
+            String[] f = l.split("\\s+");
+            if (f.length < 2 || !f[0].equals(fw) || parse(f[1], -1) <= 0) continue;
+            txSoc = parse(f[1], -1);
+            txHv = f.length > 2 ? parse(f[2], -1) : -1;
+            txSoh = f.length > 3 ? parse(f[3], -1) : -1;
+            verifySource = "known_firmware.txt";
+            return "known_firmware";
+        }
         return "unverified";
     }
 

@@ -18,7 +18,7 @@ export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.4.0
+VERSION=0.4.1
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service
@@ -260,12 +260,14 @@ session_start() {   # reason
 #   1. numbers the app resolved BY NAME from this firmware's own interface
 #      definition (TRANSACTION_getBatSoc etc.), saved in $STATE/txn together
 #      with the firmware id they were resolved on; or
-#   2. built-in numbers, only on firmware builds verified by hand (KNOWN_FW).
+#   2. numbers listed for this exact build in known_firmware.txt (verified by hand).
 # With neither, the monitor makes no calls and reports state=unverified.
 # The service must also report the expected interface descriptor.
 HSCAN_IFACE=com.hkmc.telematics.hscan.tm_interface.ITM_HSCANService
-# 2023 Ioniq 5 SEL US, NEEV.USA.0000.V015.012.260507: soc=137 hv=74 soh=214
-KNOWN_FW=" eng.vmadmin.20260507.094910 "
+# Hand-verified builds and their numbers: known_firmware.txt in the package root.
+PKG_DIR=${BWD_PKG:-${0%/*}/..}
+KNOWN_FILE=$PKG_DIR/known_firmware.txt
+[ -r "$KNOWN_FILE" ] || KNOWN_FILE=/data/nemesis/apps/battery.watchdog/known_firmware.txt
 FW=$(getprop ro.build.version.incremental 2>/dev/null)
 VERIFIED=0; VERIFY_WHY=""
 
@@ -288,9 +290,17 @@ verify() {
             VERIFIED=1; VERIFY_WHY=resolved_by_name; return
         fi
     fi
-    case "$KNOWN_FW" in
-        *" $FW "*) if [ -n "$FW" ]; then TX_SOC=137; TX_HVSOC=74; TX_SOH=214; VERIFIED=1; VERIFY_WHY=known_firmware; return; fi ;;
-    esac
+    if [ -n "$FW" ] && [ -r "$KNOWN_FILE" ]; then
+        while read -r _f _s _h _o _rest; do
+            case "$_f" in ''|'#'*) continue;; esac
+            [ "$_f" = "$FW" ] || continue
+            isnum "$_s" || continue
+            TX_SOC=$_s
+            isnum "$_h" && TX_HVSOC=$_h
+            isnum "$_o" && TX_SOH=$_o
+            VERIFIED=1; VERIFY_WHY=known_firmware; return
+        done < "$KNOWN_FILE"
+    fi
     VERIFY_WHY=unverified_firmware
 }
 

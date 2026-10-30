@@ -46,9 +46,9 @@ All data stays on the head unit.
 | 2023 Hyundai Ioniq 5 SEL (US) | 260507 | Working |
 
 Other Gen5W cars may work if their firmware provides the same values. On
-first launch the app checks your firmware automatically. If it shows
-**Paused**, see [Safety](#safety), and please open an issue with your car,
-firmware and what Diagnostics shows so the table can grow.
+first launch the app checks your firmware automatically. Either way, please
+file a [firmware report](../../issues/new?template=firmware-report.yml) so
+the table can grow. If it shows **Paused**, see [Safety](#safety).
 
 ## Requirements
 
@@ -240,7 +240,8 @@ app/                     the on-screen app (Java, no resources)
 research/odex-dump/      read-only USB dump of firmware files, for offline checks
 research/probe-12v/      USB probe that reads the values (verified firmware only)
 tests/                   service test with mocked car services
-tools/                   APK build and packaging scripts
+tools/                   APK build, packaging, and check_firmware.py
+package/known_firmware.txt  hand-verified firmware builds and their numbers
 docs/TECHNICAL.md        data sources, internals, porting notes
 ```
 

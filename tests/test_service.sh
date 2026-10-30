@@ -92,4 +92,15 @@ grep -q '^verify=interface_mismatch$' "$T/state/status" || fail "E: should detec
 [ ! -s "$T/calls" ] || fail "E: made binder calls on the wrong interface"
 rm -rf "$T"; echo "  E wrong interface: no calls"
 
+# F: a build listed in known_firmware.txt with its own numbers
+T=$(mktemp -d); setup "$T"; echo eng.kia.20270101.000000 > "$T/fw"; echo 141 > "$T/txn_soc"
+mkdir -p "$T/pkg"
+printf '# test table\neng.vmadmin.20260507.094910  137  74  214  # reference\neng.kia.20270101.000000  141  -  214  # other build\n' > "$T/pkg/known_firmware.txt"
+BWD_PKG="$T/pkg" BWD_TEST_PATH="$T/bin" BWD_STATE="$T/state" BWD_TEST=1 BWD_TEST_LOOPS=3 "$SH" "$ROOT/package/svc/watchdog.sh" > "$T/out" 2>&1
+grep -q '^verify=known_firmware$' "$T/state/status" || fail "F: should use the table entry"
+grep -q '^pct10=830' "$T/state/status" || fail "F: should read 83% via txn 141"
+grep -q '^74$' "$T/calls" && fail "F: hv is '-' for this build, must not call 74"
+grep -q '^137$' "$T/calls" && fail "F: must not call the reference build's 137"
+rm -rf "$T"; echo "  F per-build numbers from known_firmware.txt: ok"
+
 echo "PASS ($SH)"

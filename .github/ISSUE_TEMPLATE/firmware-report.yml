@@ -1,0 +1,76 @@
+name: Firmware report
+description: Tell us whether Battery Watchdog works on your car and firmware.
+title: "[Firmware] <year> <model> <trim> (<region>), <firmware>"
+labels: ["firmware"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! This adds your car to the compatibility list.
+        **Don't attach firmware files** (ODEX/APK/JAR dumps). They belong to Hyundai/Kia, and only the numbers below are needed.
+  - type: input
+    id: car
+    attributes:
+      label: Car
+      placeholder: 2023 Hyundai Ioniq 5 SEL
+    validations:
+      required: true
+  - type: dropdown
+    id: region
+    attributes:
+      label: Region
+      options: [US, Canada, Europe, UK, Korea, Australia, Other]
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      description: The `firmware:` line from Advanced → Diagnostics (looks like `eng.vmadmin.20260507.094910`), and the version from the car's settings if you know it.
+      placeholder: eng.vmadmin.20260507.094910 / NEEV.USA.0000.V015.012.260507
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Battery Watchdog version
+      placeholder: v0.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: verification
+    attributes:
+      label: Verification line in Diagnostics
+      options:
+        - "resolved (found by name)"
+        - "known_firmware"
+        - "Paused / unverified"
+        - "interface_mismatch"
+        - "Something else"
+    validations:
+      required: true
+  - type: input
+    id: numbers
+    attributes:
+      label: Numbers shown (soc / hv / soh)
+      description: From the same Diagnostics line, e.g. `soc=137 hv=74 soh=214`.
+      placeholder: soc=137 hv=74 soh=214
+  - type: dropdown
+    id: readings
+    attributes:
+      label: Do the readings look right?
+      description: 12V usually 60–95 %, main battery matches the dash, SOH 100 or less.
+      options: ["Yes", "No", "No readings (Paused)"]
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: check_firmware.py output (only if Paused)
+      description: If the app shows Paused, run `research/odex-dump` and then `python3 tools/check_firmware.py <dump folder>`, and paste the output here. See docs/TECHNICAL.md, "Porting".
+      render: text
+  - type: textarea
+    id: notes
+    attributes:
+      label: Photo of Diagnostics and anything else
+      description: Drag in a photo of the top of Advanced → Diagnostics.
