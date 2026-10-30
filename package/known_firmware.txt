@@ -5,4 +5,4 @@
 #   <ro.build.version.incremental>  <getBatSoc>  <remainBatteryPercentage>  <getXEV_Bms_GDS_SOH>  # car, firmware
 # Use - for a number the firmware doesn't have. Get the line from
 # tools/check_firmware.py run on an odex-dump of that car (see docs/TECHNICAL.md).
-eng.vmadmin.20260507.094910  137  74  214  # 2023 Hyundai Ioniq 5 SEL (US), NEEV.USA.0000.V015.012.260507
+eng.vmadmin.20260507.094910  137  74  214  # Ioniq 5 (US) 260507: 2023 SEL (NEEV.USA.0000.V015.012.260507); 2022 Limited AWD (NEEV.USA.S5W_M.V015.012.260507, #1)
