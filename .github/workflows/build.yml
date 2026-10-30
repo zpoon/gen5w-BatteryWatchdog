@@ -39,7 +39,10 @@ jobs:
       - name: Build mksh R43 (the exact shell on the 2023 Ioniq 5 head unit)
         run: |
           git clone -q --depth 1 --branch mksh-R43 https://github.com/MirBSD/mksh.git /tmp/mksh-r43
-          cd /tmp/mksh-r43 && CFLAGS="-O1 -w" sh ./Build.sh -r > build.log 2>&1 || { tail -n 20 build.log; exit 1; }
+          cd /tmp/mksh-r43
+          export CFLAGS="-O1 -w -std=gnu99 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types"
+          sh ./Build.sh -r > build.log 2>&1 \
+            || { grep -iE "error|fail" build.log | tail -n 15 | while IFS= read -r l; do echo "::error title=mksh build::$l"; done; tail -n 5 build.log | while IFS= read -r l; do echo "::error title=mksh build tail::$l"; done; exit 1; }
           ./mksh -c 'echo "$KSH_VERSION"'
 
       - name: Test the monitor service with mocked car services
