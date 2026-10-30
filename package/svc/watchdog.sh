@@ -12,13 +12,13 @@
 # compares the reading with the end of the previous session and warns via the
 # factory toast. While the display is on it samples every interval_s.
 #
-# stdout is captured by NEMESIS:  nemesis log service battery.watchdog/monitor
+# stdout is captured by NEMESIS:  nemesis log service battery.watchdog/watch
 # Config: one-value files in $STATE (written by the app / post.sh).
 export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:$PATH
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
-VERSION=0.2.5
+VERSION=0.2.6
 TAG=battery.watchdog
 STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
 SVC=tm_hscan_service

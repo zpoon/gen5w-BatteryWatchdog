@@ -13,8 +13,8 @@ mkdir -p "$STATE" 2>/dev/null
 # Start (or restart) the monitor once NEMESIS has registered the new service,
 # so an update takes effect without a reboot. Runs in the background.
 ( sleep 15
-  : > /data/nemesis/logs/battery.watchdog/monitor.log 2>/dev/null
-  /system/xbin/nemesis service stop battery.watchdog/monitor >/dev/null 2>&1
-  /system/xbin/nemesis service start battery.watchdog/monitor >/dev/null 2>&1 ) &
+  : > /data/nemesis/logs/battery.watchdog/watch.log 2>/dev/null
+  /system/xbin/nemesis service stop battery.watchdog/watch >/dev/null 2>&1
+  /system/xbin/nemesis service start battery.watchdog/watch >/dev/null 2>&1 ) &
 echo "battery.watchdog installed (warn_pct=$(cat "$STATE/warn_pct" 2>/dev/null))"
 exit 0

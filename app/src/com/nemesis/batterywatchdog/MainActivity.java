@@ -245,8 +245,8 @@ public class MainActivity extends Activity {
         rawLabel.setText(shown);
     }
 
-    static final String SVC_ID = "battery.watchdog/monitor";
-    static final String SVC_LOG = "/data/nemesis/logs/battery.watchdog/monitor.log";
+    static final String SVC_ID = "battery.watchdog/watch";
+    static final String SVC_LOG = "/data/nemesis/logs/battery.watchdog/watch.log";
     static final String SVC_SCRIPT = "/data/nemesis/apps/battery.watchdog/svc/watchdog.sh";
 
     void showDiagnostics() {

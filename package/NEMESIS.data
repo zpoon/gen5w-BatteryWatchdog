@@ -12,7 +12,7 @@ package=com.nemesis.batterywatchdog
 component=com.nemesis.batterywatchdog/.MainActivity
 
 [service.0]
-name=monitor
+name=watch
 kind=sh
 path=svc/watchdog.sh
 uid=root
