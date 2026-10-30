@@ -36,10 +36,19 @@ jobs:
             sh -n "$f"; mksh -n "$f"
           done
 
+      - name: Build mksh R43 (the exact shell on the 2023 Ioniq 5 head unit)
+        run: |
+          git clone -q --depth 1 --branch mksh-R43 https://github.com/MirBSD/mksh.git /tmp/mksh-r43
+          cd /tmp/mksh-r43 && CFLAGS="-O1 -w" sh ./Build.sh -r > build.log 2>&1 || { tail -n 20 build.log; exit 1; }
+          ./mksh -c 'echo "$KSH_VERSION"'
+
       - name: Test the monitor service with mocked car services
         run: |
           tests/test_service.sh sh
           tests/test_service.sh mksh
+          set -o pipefail
+          tests/test_service.sh /tmp/mksh-r43/mksh 2>&1 | tee r43.log \
+            || { tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done; exit 1; }
 
       - name: Build APK
         run: |
