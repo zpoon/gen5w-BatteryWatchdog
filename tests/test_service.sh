@@ -114,10 +114,11 @@ temp_case() {   # temp_case <name> <datc file content or ''> <logcat content> <w
     grep -q "^temp_src=$5\$" "$T/state/status" || fail "$1: temp_src should be $5"
     rm -rf "$T"; echo "  $1: ok"
 }
-temp_case "G climate dump as on the car: C invalid, F raw 0x6e = 68F" "  OutTempC : 0xff
-  OutTempF : 0x6e" "" 20 climate
-temp_case "H climate dump, C raw 0x76 = 18C preferred over F" "OutTempC : 0x76
-OutTempF : 0x6e" "" 18 climate
+temp_case "G climate dump as on the car: C invalid, F raw 0x6e = 70F" "  OutTempC : 0xff
+  OutTempF : 0x6e" "" 21 climate
+temp_case "H climate dump, C raw 0x78 = 20C preferred over F" "OutTempC : 0x78
+OutTempF : 0x6e" "" 20 climate
+temp_case "H2 ECO log preferred over the climate dump" "OutTempF : 0x6e" '{"outTemperature":19}' 19 eco_log
 temp_case "I UI log in Fahrenheit" "" "10-30 08:00:00.000 D/Climate( 99): setOutsideTempUIAdvanced::temp = 50 F" 10 ui_log
 temp_case "J both raw values invalid, ECO log used" "OutTempC : 0xff
 OutTempF : 0xfe" '{"outTemperature":-3}' -3 eco_log

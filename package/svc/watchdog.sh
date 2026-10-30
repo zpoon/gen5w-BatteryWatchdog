@@ -136,10 +136,10 @@ decode() {   # RAW -> tenths of a percent, or -1
 # ---- outside temperature (context only; never used for decisions) ------------
 # Sets TEMP_C (whole deg C) and TEMP_SRC, or leaves TEMP_C empty. TEMP_LINE keeps
 # the climate-dump line it looked at, for Diagnostics. Sources, in order:
-#   1. dumpsys of the climate service: OutTempC / OutTempF raw CAN values,
-#      decoded as below
-#   2. telematics ECO JSON "outTemperature" in logcat (deg C), as coldstart-heat
-#   3. UI log "setOutsideTempUIAdvanced::temp = N" (deg F), coldstart-heat's fallback
+#   1. telematics ECO JSON "outTemperature" in logcat (deg C), as coldstart-heat
+#   2. UI log "setOutsideTempUIAdvanced::temp = N" (deg F), coldstart-heat's fallback
+#   3. dumpsys of the climate service: OutTempC / OutTempF raw CAN values,
+#      decoded as below. Available right away, unlike 1 and 2.
 TEMP_SRC=""; TEMP_LINE=""
 trim() { _t=$1; while :; do case "$_t" in ' '*) _t=${_t# };; *' ') _t=${_t% };; *) break;; esac; done; echo "$_t"; }
 in_range_c() { [ "$1" -ge -45 ] 2>/dev/null && [ "$1" -le 55 ]; }   # believable outdoor range
@@ -147,10 +147,11 @@ in_range_c() { [ "$1" -ge -45 ] 2>/dev/null && [ "$1" -le 55 ]; }   # believable
 # The climate dump shows the raw CAN values in hex, e.g. on a 2023 Ioniq 5:
 #     OutTempC : 0xff      (0xff = not available)
 #     OutTempF : 0x6e
-# Decoded with Hyundai's DATC signal definitions (commaai/opendbc,
-# hyundai_kia_generic: CR_Datc_OutTempC 0.5 x raw - 41 C, CR_Datc_OutTempF
-# raw - 42 F). Only these two exact keys with hex values are used; 0xfe/0xff
-# mean "not available". C is preferred (half-degree resolution).
+# Decoded as C = 0.5 x raw - 40 and F = raw - 40. On the car, 0x6e read 70 F
+# with the dash at 70 F, and egmp-aa-ev-feat found 0.5 x raw - 40 C matches
+# the dash for the same DATC signal. (commaai/opendbc lists offsets of -41 C
+# and -42 F for CR_Datc_OutTempC/F, which read 2 F low here.) Only these two
+# exact keys with hex values are used; 0xfe/0xff mean "not available".
 temp_from_datc() {
     _out=$($DUMPSYS com.hkmc.micom.datc 2>/dev/null | grep -i 'outtemp')
     _tc=""; _tf=""
@@ -164,8 +165,8 @@ temp_from_datc() {
         case "$_n" in ''|-*|*[!0-9]*) continue;; esac
         [ "$_n" -ge 254 ] && continue
         case "$_k" in
-            OutTempC) _tc=$(( _n / 2 - 41 ));;
-            OutTempF) _tf=$(( (_n - 42 - 32) * 5 / 9 ));;
+            OutTempC) _tc=$(( _n / 2 - 40 ));;
+            OutTempF) _tf=$(( (_n - 40 - 32) * 5 / 9 ));;
         esac
     done
     lines_off
@@ -203,7 +204,9 @@ temp_from_logcat() {
 TEMP_T=0
 read_temp() {
     TEMP_LINE=""
-    if temp_from_datc || temp_from_logcat; then TEMP_T=$(now); return; fi
+    # the logs match the dash exactly but only appear a few minutes into a drive;
+    # the climate dump is there from the start, so it fills that gap
+    if temp_from_logcat || temp_from_datc; then TEMP_T=$(now); return; fi
     if [ -n "$TEMP_C" ] && [ $(( $(now) - TEMP_T )) -le 1800 ]; then return; fi
     TEMP_C=""; TEMP_SRC=""
 }

@@ -18,18 +18,23 @@ All reads are getters on the telematics service `tm_hscan_service`
 Outside temperature (context only, never used for decisions) is tried from,
 in order:
 
-1. `dumpsys com.hkmc.micom.datc`. On the reference car it shows the raw CAN
-   values in hex, for example `OutTempC : 0xff` and `OutTempF : 0x6e`. They're
-   decoded with Hyundai's DATC signal definitions from
-   [commaai/opendbc](https://github.com/commaai/opendbc):
-   `CR_Datc_OutTempC` = 0.5 × raw − 41 °C and `CR_Datc_OutTempF` = raw − 42 °F,
-   so `0x6e` = 68 °F. `0xfe`/`0xff` mean not available (the C value is
-   `0xff` when the display is set to °F). Only those two keys with hex values
-   are used, and only within −45…55 °C. Diagnostics shows the lines.
-2. The telematics ECO JSON `"outTemperature"` in logcat (whole °C), as
+1. The telematics ECO JSON `"outTemperature"` in logcat (whole °C), as
    [hkmc-coldstart-heat](https://github.com/eclipseempire/hkmc-coldstart-heat).
-3. The UI log line `setOutsideTempUIAdvanced::temp = N` (°F), coldstart-heat's
+   Matches the dash, but only appears a few minutes into a drive.
+2. The UI log line `setOutsideTempUIAdvanced::temp = N` (°F), coldstart-heat's
    fallback.
+3. `dumpsys com.hkmc.micom.datc`, available right away. On the reference car
+   it shows the raw CAN values in hex: `OutTempC : 0xff` and
+   `OutTempF : 0x6e`. Decoded as C = 0.5 × raw − 40 and F = raw − 40, so
+   `0x6e` = 70 °F, matching the dash at the time. egmp-aa-ev-feat found the
+   same 0.5 × raw − 40 °C matches the dash for this DATC signal;
+   [commaai/opendbc](https://github.com/commaai/opendbc) lists −41 °C / −42 °F
+   offsets for `CR_Datc_OutTempC/F`, which read 2 °F low here. `0xfe`/`0xff`
+   mean not available (the C value is `0xff` with the display set to °F). Only
+   those two keys with hex values are used, within −45…55 °C.
+
+The last value is kept for up to 30 minutes, so the reading doesn't blank
+between log lines.
 
 The status file records `temp_src` (`climate`, `eco_log` or `ui_log`) and the
 climate-dump line it looked at (`temp_line`). No transaction numbers are
