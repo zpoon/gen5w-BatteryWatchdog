@@ -47,6 +47,7 @@ All data stays on the head unit.
 |---|---|---|
 | 2023 Hyundai Ioniq 5 SEL (US) | 260507 | Working |
 | 2022 Hyundai Ioniq 5 Limited AWD (US) | 260507 | Working ([#1](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/1)) |
+| 2023 Hyundai Ioniq 5 Limited AWD (US) | 260903 | Working ([#2](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/2)) |
 
 Other Gen5W cars may work if their firmware provides the same values. On
 first launch the app checks your firmware automatically. Either way, please
@@ -71,8 +72,9 @@ the table can grow. If it shows **Paused**, see [Safety](#safety).
 4. Open **Battery Watchdog** from the app list. The first reading appears
    within about a minute.
 
-To update, install a newer version the same way, over the top. Settings and
-history are kept.
+To update: NEMESIS can't upgrade an installed package in place yet, so
+[uninstall](#uninstall) Battery Watchdog first, then install the new version
+the same way. Settings and history are kept.
 
 ## Using it
 
@@ -240,8 +242,8 @@ and a photo of the top of Diagnostics.
 In the NEMESIS manager, open **Packages**, select **Battery Watchdog**
 (`battery.watchdog`) and tap **Uninstall**. From a shell,
 `nemesis uninstall battery.watchdog` does the same. Settings and history are
-stored in `/data/nemesis/state/battery.watchdog/` and may remain after
-uninstalling.
+stored in `/data/nemesis/state/battery.watchdog/` and stay after uninstalling,
+so a reinstall picks them up again.
 
 ## Building from source
 
@@ -252,7 +254,8 @@ official Android SDK tools, and pushing a `v*` tag publishes a release.
 **Versions:** the `VERSION` file holds the next release's version (e.g.
 `0.5.0`). Builds from pushes are test builds, stamped `0.5.0-dev.<run>`;
 publishing a release tagged `v0.5.0` builds the plain `0.5.0`. The Android
-`versionCode` is the CI run number, so every build installs over the last.
+`versionCode` is the CI run number, so every build counts as newer than the
+last (NEMESIS still needs the old one uninstalled first).
 Bump `VERSION` once after each release, not for every test build.
 
 To build locally you need a JDK and an Android SDK with build-tools 30.0.3

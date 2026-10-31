@@ -43,6 +43,7 @@ body:
       label: Verification line in Diagnostics
       options:
         - "resolved (found by name)"
+        - "resolved (saved earlier)"
         - "known_firmware"
         - "Paused / unverified"
         - "interface_mismatch"

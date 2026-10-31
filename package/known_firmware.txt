@@ -6,3 +6,4 @@
 # Use - for a number the firmware doesn't have. Get the line from
 # tools/check_firmware.py run on an odex-dump of that car (see docs/TECHNICAL.md).
 eng.vmadmin.20260507.094910  137  74  214  # Ioniq 5 (US) 260507: 2023 SEL (NEEV.USA.0000.V015.012.260507); 2022 Limited AWD (NEEV.USA.S5W_M.V015.012.260507, #1)
+eng.vmadmin.20260903.161833  137  74  214  # Ioniq 5 (US) 260903: 2023 Limited AWD (NEEV23.USA.S5W_M.V016.010.260903, #2)
