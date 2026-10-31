@@ -119,7 +119,10 @@ between drives (QuickBoot), so one service process sees many drives.
   whether the previous drive of 20 min or more ended lower than it started.
   Warnings go to the factory toast (`com.hkmc.intent.action.TOAST`) and to
   `warnings`.
-- While the display is on it samples every `interval_s` (300 s).
+- While the display is on it samples every `interval_s` (300 s), and every
+  `early_s` (60 s) during the first `early_min` (15) minutes of a drive, so the
+  analysis can measure how quickly the 12V recovers (charge acceptance). That
+  adds about 12 lines per drive.
 
 The script is written for the head unit's shell, **mksh R43 (2013)**, and
 KitKat's toolbox:
@@ -159,7 +162,7 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 | `warnings` | every warning raised, timestamped |
 | `status` | latest state, read by the app |
 | `sess_start`, `last` | first and most recent sample of the current drive |
-| one-value files | settings: `enabled`, `warn_pct`, `drop_pct`, `interval_s`, `toast_start`, `decode`, `scale_x10`, and optional `min_off_s`, `poll_s`, `gap_s`, `settle_s`, `max_lines` |
+| one-value files | settings: `enabled`, `warn_pct`, `drop_pct`, `interval_s`, `toast_start`, `decode`, `scale_x10`, and optional `min_off_s`, `poll_s`, `gap_s`, `settle_s`, `max_lines`, `early_s`, `early_min` |
 
 `pct10` and `hv10` are tenths of a percent (`725` = 72.5 %).
 
@@ -214,8 +217,41 @@ script directly, outside NEMESIS, to tell a script problem from a NEMESIS one.
 tests/test_service.sh            # sh
 tests/test_service.sh mksh       # any shell
 BT=<build-tools dir with dx> tests/test_resolver.sh   # TxnResolver + check_firmware.py
+python3 tests/test_analyze.py    # tools/analyze.py on simulated healthy / failing cars
 ```
 
 It mocks `service`, `am`, `dumpsys` and `logcat`, runs two drives (83 % → 64 %
 with the display off in between), and checks the status file, the log and the
 parked-drop toast.
+
+## Offline analysis (experimental)
+
+`tools/analyze.py` is where new health heuristics are tried before they go
+into the app. Run it on an Export to USB folder:
+
+```
+python3 tools/analyze.py BatteryWatchdog-export-<date> [--csv features.csv] [--plot report.png]
+```
+
+It splits the log into drives (stops under 10 min are merged, as in the app)
+and parked periods, and works out for each:
+
+| feature | meaning | why |
+|---|---|---|
+| charge acceptance | rise per 10 min over the first 15 min of a drive | a worn battery takes charge slowly |
+| ceiling | highest level on drives of 30+ min | sulfation lowers the level it can reach |
+| parked drain | points lost per day parked | parasitic drain or high self-discharge |
+| recharges | parks where the level went up (Auxiliary Battery Saver+) | it tops up more often when the battery is weak |
+| start level | level at each drive start | slow downward drift |
+| jumps | changes of 8+ points between samples | the sensor recalibrating, not a trend |
+
+"Normal" is learned from the car's first 14 days (median and MAD, so a single
+odd reading doesn't move it). The last 7 days are then compared with it, and
+the script prints Normal, Watch or Check battery with its reasons. Parks where
+the main battery was below 20 % are left out of the drain figures, since the
+car stops charging the 12V from it there. The thresholds are starting points
+to tune on real exports, not validated limits; `tests/test_analyze.py` only
+proves that the logic separates simulated healthy and failing batteries.
+
+Diagnostics also lists the battery-related function names in the telematics
+interface (names only; nothing is called), to see what else could be logged.

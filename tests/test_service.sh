@@ -143,6 +143,13 @@ BWD_TEST_MIN_OFF=600 run "$T" 12; wait
 grep -q 'short stop' "$T/out" || fail "O: should log the short stop"
 rm -rf "$T"; echo "  O short stop: same drive"
 
+# P: denser sampling at the start of a drive
+T=$(mktemp -d); setup "$T"
+BWD_TEST_INTERVAL=600 BWD_TEST_EARLY_S=1 run "$T" 8
+n=$(grep -c ',sample,' "$T/state/log.csv")
+[ "$n" -ge 3 ] || fail "P: expected several early samples, got $n"
+rm -rf "$T"; echo "  P early sampling: $n samples"
+
 # M: nothing temporary left behind in the state dir
 T=$(mktemp -d); setup "$T"; printf '  mOutTempC = 4\n' > "$T/datc"; run "$T" 3
 ls -a "$T/state" | grep -E '\.tmp$|^\.datc|^\.temp' && fail "M: temp files left in the state dir"

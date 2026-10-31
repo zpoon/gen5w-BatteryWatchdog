@@ -3,3 +3,4 @@ app/*.apk
 app/*.jks
 package/app/*.apk
 dist/
+__pycache__/

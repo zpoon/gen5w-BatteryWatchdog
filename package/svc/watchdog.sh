@@ -262,6 +262,8 @@ write_status() {   # state
 load_cfg() {
     ENABLED=$(cfg enabled 1)
     INTERVAL=$(cfg interval_s 300)
+    EARLY_S=$(cfg early_s 60)        # sample this often during the first early_min of a drive,
+    EARLY_MIN=$(cfg early_min 15)    # to measure how quickly the 12V recovers (charge acceptance)
     SETTLE=$(cfg settle_s 30)
     WARN_PCT=$(cfg warn_pct 60)
     DROP_PCT=$(cfg drop_pct 15)
@@ -273,7 +275,17 @@ load_cfg() {
     MIN_OFF=$(cfg min_off_s 600)  # screen off at least this long = parked = a new drive
     GAP=$(cfg gap_s "$MIN_OFF")   # wall-clock jump that means "the unit was asleep"
     [ "$INTERVAL" -lt 30 ] 2>/dev/null && INTERVAL=30
-    if [ -n "$BWD_TEST" ]; then INTERVAL=${BWD_TEST_INTERVAL:-2}; POLL=1; SETTLE=0; MIN_OFF=${BWD_TEST_MIN_OFF:-2}; GAP=600; fi
+    [ "$EARLY_S" -lt 30 ] 2>/dev/null && EARLY_S=30
+    if [ -n "$BWD_TEST" ]; then INTERVAL=${BWD_TEST_INTERVAL:-2}; POLL=1; SETTLE=0; MIN_OFF=${BWD_TEST_MIN_OFF:-2}; GAP=600; EARLY_S=${BWD_TEST_EARLY_S:-$INTERVAL}; fi
+}
+
+# sampling interval right now: early_s for the first early_min of a drive, then interval_s
+cur_interval() {
+    if [ -n "$SESS_T" ] && [ "$SESS_T" -gt 0 ] 2>/dev/null && [ $(( $1 - SESS_T )) -lt $(( EARLY_MIN * 60 )) ]; then
+        echo "$EARLY_S"
+    else
+        echo "$INTERVAL"
+    fi
 }
 
 # ---- a new drive: compare with the previous one and warn -----------------------
@@ -443,7 +455,7 @@ while :; do
     if [ -n "$NEED_SESSION" ] && [ "$DISP" != off ]; then
         session_start "$NEED_SESSION"
         NEED_SESSION=""
-    elif [ "$DISP" != off ] && [ $((T - LAST_SAMPLE)) -ge "$INTERVAL" ]; then
+    elif [ "$DISP" != off ] && [ $((T - LAST_SAMPLE)) -ge "$(cur_interval "$T")" ]; then
         sample
         append sample "$S_RAW" "$S_PCT10"
         LAST_SAMPLE=$T

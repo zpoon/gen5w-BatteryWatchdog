@@ -610,6 +610,8 @@ public class MainActivity extends Activity {
         d.append("verification: ").append(verifyState).append(verifySource.length() > 0 ? " (" + verifySource + ")" : "")
             .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
         d.append("file writes: ").append(lastWriteMethod.length() > 0 ? lastWriteMethod : "(none yet)").append("\n");
+        d.append("telematics battery-related functions (names only, nothing is called):\n")
+            .append(firstLines(batteryFunctions(), 40)).append("\n");
         d.append("lookup by name:\n").append(firstLines(runRoot("cat " + STATE + "/resolve.log 2>/dev/null"), 8)).append("\n");
         // newest log lines first, so the latest error is at the top
         String log = runRoot("cat " + SVC_LOG + " 2>&1");
@@ -905,6 +907,37 @@ public class MainActivity extends Activity {
         if (want > 4096) return false;
         String back = runRoot("cat " + shq(path) + " 2>/dev/null");
         return back.trim().equals(content.trim());
+    }
+
+    /**
+     * Battery-related function names in the telematics service's own interface
+     * definition (the file the lookup found), with their transaction numbers.
+     * Read from the firmware file only: nothing is called. This is how to find
+     * out whether the firmware exposes more 12V data than getBatSoc.
+     */
+    String batteryFunctions() {
+        String src = kv(runRoot("cat " + STATE + "/txn 2>/dev/null"), "source");
+        if (!src.startsWith("/")) return "(no interface file recorded yet: open the app on a verified firmware first)";
+        try {
+            File f = new File(src);
+            Map<String, Integer> m;
+            String n = src.toLowerCase(Locale.US);
+            if (n.endsWith(".apk") || n.endsWith(".jar")) m = TxnResolver.transactionsInZip(f, TxnResolver.STUB, NEEDLE);
+            else {
+                try { m = TxnResolver.transactions(f, TxnResolver.STUB); }
+                catch (java.io.IOException e) { File c = viaRoot(f); m = TxnResolver.transactions(c, TxnResolver.STUB); c.delete(); }
+            }
+            java.util.TreeMap<Integer, String> hits = new java.util.TreeMap<Integer, String>();
+            for (Map.Entry<String, Integer> e : m.entrySet()) {
+                if (e.getKey().matches("(?i).*(bat|ibs|volt|soh|soc|12v|aux|ldc|charg).*")) hits.put(e.getValue(), e.getKey());
+            }
+            StringBuilder b = new StringBuilder(m.size() + " functions in " + src + "; matching:\n");
+            for (Map.Entry<Integer, String> e : hits.entrySet()) b.append("  ").append(e.getKey()).append("  ").append(e.getValue()).append("\n");
+            if (hits.isEmpty()) b.append("  (none)\n");
+            return b.toString();
+        } catch (Throwable t) {
+            return "couldn't read " + src + ": " + t;
+        }
     }
 
     /** File size from `ls -l` as root, or -1. Works with toolbox and busybox formats. */
