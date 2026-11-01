@@ -59,6 +59,33 @@ def main():
             print(f"  {mark:4} {name}: {got}")
             if got != want:
                 print(out)
+    # --share: same analysis after the dates are shifted, real dates gone
+    with tempfile.TemporaryDirectory() as d:
+        simulate(d)
+        with open(os.path.join(d, "raw", "sessions"), "w") as f:
+            f.write("1780000000 40 820 900\n")
+        with open(os.path.join(d, "raw", "warnings"), "w") as f:
+            f.write("1780003600 12V battery low (58%)\n")
+        z = os.path.join(d, "share.zip")
+        subprocess.run([sys.executable, TOOL, d, "--share", z], capture_output=True, check=True)
+        import zipfile
+        with zipfile.ZipFile(z) as zf:
+            names = sorted(zf.namelist())
+            log = zf.read("raw/log.csv").decode()
+            ses = zf.read("raw/sessions").decode()
+            war = zf.read("raw/warnings").decode()
+            ex = os.path.join(d, "x"); zf.extractall(ex)
+        orig = open(os.path.join(d, "raw", "log.csv")).read().split("\n")[0].split(",")[0]
+        shifted = log.split("\n")[0].split(",")[0]
+        delta = int(orig) - int(shifted)
+        good = (names == ["info.txt", "raw/log.csv", "raw/sessions", "raw/warnings"]
+                and delta > 0 and delta % (7 * 86400) == 0
+                and str(1780000000 - delta) in ses and str(1780003600 - delta) in war
+                and "1780000000" not in log)
+        got, _ = run(ex)
+        good &= got == "Normal"
+        ok &= good
+        print(f"  {'ok' if good else 'FAIL':4} share: {names}, shifted {delta // 86400} days, analysis {got}")
     sys.exit(0 if ok else 1)
 
 

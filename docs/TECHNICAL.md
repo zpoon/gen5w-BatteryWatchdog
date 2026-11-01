@@ -231,7 +231,14 @@ into the app. Run it on an Export to USB folder:
 
 ```
 python3 tools/analyze.py BatteryWatchdog-export-<date> [--csv features.csv] [--plot report.png]
+python3 tools/analyze.py BatteryWatchdog-export-<date> --share data.zip
 ```
+
+`--share` writes the zip for a data submission: `raw/log.csv`,
+`raw/log.old.csv`, `raw/sessions`, `raw/warnings` and three settings, with every
+epoch moved back by one random whole number of weeks, plus `info.txt` with the
+app, verification and shell lines from Diagnostics. The analysis reads that zip,
+once extracted, the same way as an export.
 
 It splits the log into drives (stops under 10 min are merged, as in the app)
 and parked periods, and works out for each:

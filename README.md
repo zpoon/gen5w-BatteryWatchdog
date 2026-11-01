@@ -136,8 +136,35 @@ file on it), then tap **Advanced → Export to USB**. It creates a folder like
 | `diagnostics.txt` | the Diagnostics screen, handy for bug reports |
 | `raw/` | the original files |
 
-The export contains readings, settings and the firmware version; nothing
-identifies you or the car.
+The export contains readings, settings and the firmware version. It has no
+location, VIN or account details, but the date and time of each reading show
+when the car was driven and parked.
+
+### Share your data to improve the health checks
+
+The current warnings are simple thresholds. Better checks, such as how fast
+the 12V recovers at the start of a drive or whether it drains faster while
+parked than it used to, need real logs from many cars, and above all from
+batteries that later failed or were replaced. If you're willing to help:
+
+1. Export to USB as above. A few weeks of driving is useful, a few months is
+   better.
+2. Zip the `BatteryWatchdog-export-...` folder.
+3. Open a [Share battery data](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/new?template=data-submission.yml)
+   issue, fill in what you know about your 12V battery, and attach the zip.
+4. If your battery fails or gets replaced later, comment on the same issue.
+   That makes your log far more useful.
+
+Issues are public. To share without the real dates, run
+`python3 tools/analyze.py BatteryWatchdog-export-... --share data.zip` on a
+computer (Python 3, nothing to install) and attach `data.zip` instead. It
+keeps only the battery log, drives and warnings, moves every date back by the
+same random number of whole weeks (the time of day and day of week stay), and
+adds the app and firmware version.
+
+The same tool prints its own verdict on your data:
+`python3 tools/analyze.py BatteryWatchdog-export-...`. It's experimental, so
+treat it as a curiosity for now.
 
 ### How warnings appear
 

@@ -1,0 +1,83 @@
+name: Share battery data
+description: Send an export of your 12V battery log to help build better battery health checks.
+title: "[Data] <year> <model> <trim> (<region>), <battery condition>"
+labels: ["data"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping! Battery Watchdog's next health checks (how fast the 12V recovers at the start of a drive, how much it drains while parked, and so on) need real logs from many cars, **especially from batteries that later failed or were replaced**.
+
+        **What's in an export:** 12V and main battery charge readings, outside temperature, battery health, and the date and time of each reading. It has no location, VIN or account details, but the dates and times do show when you drive and park.
+        **Prefer not to share dates?** Run `python3 tools/analyze.py <export folder> --share data.zip` (see the README). It keeps only the battery log and shifts every date by a random number of weeks, keeping the time of day and day of week. Attach `data.zip` instead of the export.
+
+        The more days the better: two weeks is useful, a few months is great. This issue is public.
+  - type: input
+    id: car
+    attributes:
+      label: Car
+      placeholder: 2023 Hyundai Ioniq 5 SEL
+    validations:
+      required: true
+  - type: dropdown
+    id: region
+    attributes:
+      label: Region
+      options: [US, Canada, Europe, UK, Korea, Australia, Other]
+    validations:
+      required: true
+  - type: input
+    id: climate
+    attributes:
+      label: Climate where the car is usually parked
+      description: Rough is fine. Temperature affects the readings.
+      placeholder: "e.g. cold winters, parked outside; or mild, garage"
+  - type: dropdown
+    id: condition
+    attributes:
+      label: 12V battery condition, as far as you know
+      description: This is the most useful part. A log from a battery that later failed is worth a lot, so please come back and comment if yours fails later.
+      options:
+        - "Healthy, original battery"
+        - "Healthy, replaced battery"
+        - "Had problems (dead battery, warnings, jump starts) during this log"
+        - "Failed or was replaced after this log"
+        - "Don't know"
+    validations:
+      required: true
+  - type: input
+    id: battery_age
+    attributes:
+      label: Age of the 12V battery
+      placeholder: "e.g. original, car built 2022-10; or replaced 2025-06"
+  - type: textarea
+    id: events
+    attributes:
+      label: Battery events
+      description: Anything that happened to the 12V during the log, with rough dates. Dead battery, jump starts, "12V battery" or "Auxiliary Battery Saver" messages, dealer tests, charging the 12V yourself, long trips, the car sitting for weeks.
+      placeholder: "2026-10-20: car wouldn't wake, jump started"
+  - type: input
+    id: usage
+    attributes:
+      label: Typical use
+      placeholder: "e.g. daily 20 min commute, parked outside overnight"
+  - type: textarea
+    id: analysis
+    attributes:
+      label: analyze.py output (optional)
+      description: If you ran `python3 tools/analyze.py <export folder>`, paste the Status lines.
+      render: text
+  - type: textarea
+    id: files
+    attributes:
+      label: Data
+      description: Zip your BatteryWatchdog-export-... folder from Advanced → Export to USB (or the `--share` zip) and drag it here.
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Sharing
+      options:
+        - label: I'm OK with this data being public and used to develop Battery Watchdog's health checks.
+          required: true

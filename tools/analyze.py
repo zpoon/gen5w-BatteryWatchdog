@@ -4,10 +4,16 @@ analyze.py - offline analysis of Battery Watchdog exports, for developing
 12V health heuristics before they go into the app.
 
     python3 tools/analyze.py <export folder> [--csv features.csv] [--plot report.png]
+    python3 tools/analyze.py <export folder> --share data.zip
 
 <export folder> is a BatteryWatchdog-export-... folder from Advanced -> Export
 to USB (it reads raw/log.csv and raw/log.old.csv), or any folder holding
 log.csv. Pure Python 3; --plot needs matplotlib.
+
+--share writes a zip for a data submission: only the battery log, drives and
+warnings, with every date moved back by the same random number of whole weeks
+(time of day and day of week are kept, the real dates are not), plus the
+firmware and app version.
 
 What it computes, per drive and per parked period, then compares with this
 car's own normal (median and MAD, so one odd reading doesn't move it):
@@ -25,8 +31,11 @@ thresholds are starting points to tune on real data, not validated limits.
 import argparse
 import csv
 import math
+import io
 import os
+import random
 import statistics
+import zipfile
 import sys
 import time
 
@@ -210,6 +219,47 @@ def assess(drives, parks):
     return ["Normal", "Watch", "Check battery"][level], reasons
 
 
+# ---------------------------------------------------------------- sharing
+SHARE_FILES = ("log.old.csv", "log.csv", "sessions", "warnings", "interval_s", "warn_pct", "drop_pct")
+
+
+def _shift_line(line, shift, sep):
+    """Move the epoch in the first field of a log/sessions/warnings line."""
+    head, _, rest = line.partition(sep)
+    try:
+        t = int(head)
+    except ValueError:
+        return line
+    return f"{t - shift}{sep}{rest}" if t > 0 else line
+
+
+def make_share(folder, out, weeks=None):
+    raw = os.path.join(folder, "raw") if os.path.isdir(os.path.join(folder, "raw")) else folder
+    weeks = weeks if weeks is not None else random.SystemRandom().randint(8, 160)
+    shift = weeks * 7 * 86400
+    info = [f"dates shifted back by an undisclosed number of whole weeks"]
+    diag = os.path.join(folder, "diagnostics.txt")
+    if os.path.exists(diag):
+        for l in open(diag, encoding="utf-8", errors="replace"):
+            if l.startswith(("app:", "verification:", "shell:")):
+                info.append(l.rstrip("\n"))
+    n = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in SHARE_FILES:
+            p = os.path.join(raw, name)
+            if not os.path.exists(p):
+                continue
+            lines = open(p, encoding="utf-8", errors="replace").read().splitlines()
+            if name in ("log.csv", "log.old.csv"):
+                lines = [_shift_line(l, shift, ",") for l in lines]
+                n += len(lines)
+            elif name in ("sessions", "warnings"):
+                lines = [_shift_line(l.strip(), shift, " ") for l in lines]
+            z.writestr("raw/" + name, "\n".join(lines) + "\n")
+        z.writestr("info.txt", "\n".join(info) + "\n")
+    return n
+
+
 # ---------------------------------------------------------------- output
 def fmt_t(t):
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(t))
@@ -220,7 +270,16 @@ def main():
     ap.add_argument("folder")
     ap.add_argument("--csv", help="write per-drive features to this CSV")
     ap.add_argument("--plot", help="save a PNG report (needs matplotlib)")
+    ap.add_argument("--share", metavar="ZIP", help="write a date-shifted zip for a data submission, then exit")
     a = ap.parse_args()
+
+    if a.share:
+        n = make_share(a.folder, a.share)
+        if not n:
+            print("no battery log found (expected raw/log.csv in an export folder)")
+            return 1
+        print(f"wrote {a.share}: {n} readings, dates shifted. Attach it to a 'Share battery data' issue.")
+        return 0
 
     rows = load_rows(a.folder)
     if not rows:
