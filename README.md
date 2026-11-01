@@ -324,6 +324,15 @@ package/known_firmware.txt  hand-verified firmware builds and their numbers
 docs/TECHNICAL.md        data sources, internals, porting notes
 ```
 
+## Support
+
+Battery Watchdog is free and always will be. If it's useful to you and you'd
+like to say thanks, you can leave a tip:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y3L829W9V7)
+
+Sharing your data or a firmware report helps just as much.
+
 ## Credits
 
 - Build and packaging tools, and the app's settings pattern, are adapted from
