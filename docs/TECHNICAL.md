@@ -189,9 +189,13 @@ For maintainers, adding a build:
 2. Sanity-check: `getBatSoc` must be present; the interface line must say
    `tm_hscan_service is …ITM_HSCANService`.
 3. Append the line to `package/known_firmware.txt`, add a row to the README
-   compatibility table, bump the version (`app/AndroidManifest.xml`,
-   `VERSION=` in `svc/watchdog.sh`), push, and publish a release. CI runs the
-   service and resolver tests on every push.
+   compatibility table, push, and publish a release (the `VERSION` file sets
+   the version). CI runs the service and resolver tests on every push.
+4. For a new firmware **release** (not just another car on one already
+   listed), add it to `os=` in `package/NEMESIS.data`, e.g. `*.260507,*.260903`.
+   NEMESIS matches it against `ro.build.product` (case-sensitive, `*` and `?`
+   wildcards) to colour the Package Store row: listed firmware shows as fully
+   compatible, anything else as partial, with a warning but still installable.
 
 Builds where the app reports `resolved` don't need a `known_firmware.txt`
 entry (the lookup already works), but one doesn't hurt as a fallback.
