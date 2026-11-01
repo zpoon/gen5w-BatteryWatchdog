@@ -12,6 +12,13 @@ on every drive and tells you when something looks wrong.
 ![Battery Watchdog on a Gen5W head unit: 12V charge, parked drain, HV battery health, history chart and settings](docs/screenshot.png)
 <sub>Mockup of the app on the 1920×720 Gen5W screen, with sample data.</sub>
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y3L829W9V7)
+
+Battery Watchdog is free. If it's useful to you, a tip is appreciated, and
+[sharing your data](#share-your-data-to-improve-the-health-checks) or a
+[firmware report](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/new?template=firmware-report.yml)
+helps just as much.
+
 > Unofficial. Not affiliated with Hyundai, Kia or HKMC. Use at your
 > own risk. Battery Watchdog only **reads** values from the car, and it
 > doesn't read anything until it has confirmed it's talking to the right
@@ -323,15 +330,6 @@ tools/                   APK build, packaging, and check_firmware.py
 package/known_firmware.txt  hand-verified firmware builds and their numbers
 docs/TECHNICAL.md        data sources, internals, porting notes
 ```
-
-## Support
-
-Battery Watchdog is free and always will be. If it's useful to you and you'd
-like to say thanks, you can leave a tip:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y3L829W9V7)
-
-Sharing your data or a firmware report helps just as much.
 
 ## Credits
 
