@@ -48,6 +48,7 @@ All data stays on the head unit.
 | 2023 Hyundai Ioniq 5 SEL (US) | 260507 | Working |
 | 2022 Hyundai Ioniq 5 Limited AWD (US) | 260507 | Working ([#1](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/1)) |
 | 2023 Hyundai Ioniq 5 Limited AWD (US) | 260903 | Working ([#2](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/2)) |
+| 2023 Kia EV6 GT-Line AWD (US) | 260507 (`eng.vmadmin.20260507.095323`) | Working ([#4](https://github.com/zpoon/gen5w-BatteryWatchdog/issues/4)) |
 
 Other Gen5W cars may work if their firmware provides the same values. On
 first launch the app checks your firmware automatically. Either way, please
