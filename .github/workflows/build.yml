@@ -67,9 +67,11 @@ jobs:
             || { tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done; exit 1; }
 
       - name: Build APK
+        env:
+          KS_B64: ${{ secrets.BWD_KEYSTORE_B64 }}
         run: |
           set -o pipefail
-          ANDROID_SDK="$ANDROID_SDK_ROOT" tools/build_apk.sh 2>&1 | tee build.log \
+          ANDROID_SDK="$ANDROID_SDK_ROOT" BWD_KEYSTORE_B64="$KS_B64" tools/build_apk.sh 2>&1 | tee build.log \
             || { tail -n 15 build.log | while IFS= read -r l; do echo "::error title=build_apk::$l"; done; exit 1; }
 
       - name: Test the transaction-number resolver against a real DEX

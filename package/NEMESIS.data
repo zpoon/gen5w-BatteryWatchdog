@@ -1,8 +1,14 @@
 [nemesis]
-version=1.2
+version=1.1
 id=battery.watchdog
 name=Battery Watchdog
-types=application,service
+type=application,service
+package-version=0.0.0
+short-desc=Monitors the 12V battery and warns before it goes flat
+detailed-desc=Logs the 12V battery charge while the car is on, shows drives and parked drops, and warns on the head unit when the battery runs low or drains fast. Read-only: it never sends anything to the car.
+os=any
+models=any
+repository=https://github.com/zpoon/gen5w-BatteryWatchdog
 postinstall=scripts/post.sh
 
 [app.0]

@@ -59,9 +59,15 @@ the table can grow. If it shows **Paused**, see [Safety](#safety).
 
 - A Gen5W head unit with **NEMESIS** installed. NEMESIS is the community
   package manager for these head units; this project doesn't install it.
-- A USB drive formatted FAT32 or exFAT.
+- A USB drive formatted FAT32 or exFAT, unless you install from the Package
+  Store.
 
 ## Install
+
+**From the Package Store (NEMESIS 1.16 or newer):** open the NEMESIS Manager,
+go to **Package Store**, select **Battery Watchdog** and tap **Install**.
+
+**From USB:**
 
 1. Download `gen5w-BatteryWatchdog-USB.zip` from the
    [latest release](../../releases/latest).
@@ -73,9 +79,10 @@ the table can grow. If it shows **Paused**, see [Safety](#safety).
 4. Open **Battery Watchdog** from the app list. The first reading appears
    within about a minute.
 
-To update: NEMESIS can't upgrade an installed package in place yet, so
-[uninstall](#uninstall) Battery Watchdog first, then install the new version
-the same way. Settings and history are kept.
+**To update:** on NEMESIS 1.16 or newer, update from the Package Store, or
+install the new USB bundle over the top and confirm the update. NEMESIS 1.15
+and older can't update a package in place, so [uninstall](#uninstall) first,
+then install the new version. Settings and history are kept either way.
 
 ## Using it
 
@@ -256,7 +263,11 @@ official Android SDK tools, and pushing a `v*` tag publishes a release.
 `0.5.0`). Builds from pushes are test builds, stamped `0.5.0-dev.<run>`;
 publishing a release tagged `v0.5.0` builds the plain `0.5.0`. The Android
 `versionCode` is the CI run number, so every build counts as newer than the
-last (NEMESIS still needs the old one uninstalled first).
+last. The NEMESIS `package-version` in `NEMESIS.data` must be dotted numbers,
+so it is stamped `0.5.1` for a release and `0.5.1.<run>` for a test build.
+APKs are signed with a fixed key from the `BWD_KEYSTORE_B64` repository
+secret, so updates install in place; without it each build gets a throwaway
+key and NEMESIS has to reinstall the app on every update.
 Bump `VERSION` once after each release, not for every test build.
 
 To build locally you need a JDK and an Android SDK with build-tools 30.0.3

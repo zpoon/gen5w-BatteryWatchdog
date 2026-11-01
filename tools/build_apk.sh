@@ -46,7 +46,14 @@ echo "== align =="
 "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/aligned.apk"
 
 echo "== sign (v1 required for KitKat) =="
+# A fixed key keeps every build updatable in place (pm install -r refuses a
+# different signer). CI decodes it from the BWD_KEYSTORE_B64 secret; without it
+# a throwaway key is made, which works but makes each update reinstall the app.
+if [ -n "$BWD_KEYSTORE_B64" ] && [ ! -f "$KS" ]; then
+  echo "$BWD_KEYSTORE_B64" | base64 -d > "$KS"
+fi
 if [ ! -f "$KS" ]; then
+  echo "warning: no signing key (BWD_KEYSTORE_B64), using a throwaway one"
   keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
     -alias bwd -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=batterywatchdog" >/dev/null 2>&1
 fi
