@@ -34,7 +34,7 @@ jobs:
           "$SDKM" "build-tools;30.0.3" "platforms;android-30" > /dev/null
 
       - name: Install mksh (the head unit's shell)
-        run: sudo apt-get install -y -qq mksh > /dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mksh > /dev/null
 
       - name: Check shell scripts parse (sh and mksh)
         run: |
