@@ -83,6 +83,9 @@ jobs:
       - name: Test the app's dates-hidden share zip against the analysis
         run: python3 tests/test_sharezip.py
 
+      - name: Test the battery report
+        run: tests/test_report.sh
+
       - name: Build NEMESIS package + USB bundle
         run: |
           cp app/batterywatchdog.apk package/app/batterywatchdog.apk

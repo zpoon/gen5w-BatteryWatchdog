@@ -137,6 +137,23 @@ Hold **−** or **+** to step quickly. Settings apply from the next drive.
 It's the car's health index for the main battery pack (100 = new), not a
 capacity measurement, and it never triggers warnings.
 
+### Battery report and warning history
+
+**Settings → Tools → Battery report** puts together everything logged, for a
+dealer or service visit, and **Save to USB** writes it as a plain text file
+(`BatteryWatchdog-report-<date>.txt`) you can print or show on a phone. It has:
+
+- the latest 12V reading and HV battery health;
+- how many warnings there were and how many drives started below your
+  warning level;
+- the five lowest 12V starts, with dates;
+- week by week: drives, average and lowest start, parked drain per day, and
+  how often the car recharged the 12V while parked;
+- every warning, with its date.
+
+**Warning history** (in Tools, or tap the warning banner) lists every warning,
+newest first.
+
 ### Exporting your data
 
 Insert a USB drive (FAT32 or exFAT, ideally one **without** a `NEMESIS.data`
@@ -155,6 +172,7 @@ The export folder contains:
 |---|---|
 | `readings.csv` | every reading: time, drive start or sample, 12V %, main battery %, outside °F, HV health |
 | `drives.csv` | one row per drive: start, length, 12V at start and end, time parked before it and the change while parked |
+| `report.txt` | the battery report (above) |
 | `warnings.txt` | every warning, with dates |
 | `diagnostics.txt` | the Diagnostics screen, handy for bug reports |
 | `raw/` | the original files |

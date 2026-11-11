@@ -144,6 +144,8 @@ public class MainActivity extends Activity {
         bannerText.setTextSize(17);
         banner.addView(bannerText);
         banner.setVisibility(View.GONE);
+        banner.setClickable(true);
+        banner.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showWarnings(); } });
         page.addView(banner, margins(LinearLayout.LayoutParams.MATCH_PARENT, 0, dp(10), 0, 0));
 
         LinearLayout body = row();
@@ -249,6 +251,8 @@ public class MainActivity extends Activity {
 
         // ---- tools
         LinearLayout tl = card("Tools");
+        tl.addView(tool("Battery report\u2026", new View.OnClickListener() { public void onClick(View v) { showReport(); } }));
+        tl.addView(tool("Warning history", new View.OnClickListener() { public void onClick(View v) { showWarnings(); } }));
         tl.addView(tool("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
         tl.addView(tool("Export to USB", new View.OnClickListener() { public void onClick(View v) { exportToUsb(); } }));
         tl.addView(tool("Share data…", new View.OnClickListener() { public void onClick(View v) { showShareSteps(); } }));
@@ -1069,11 +1073,13 @@ public class MainActivity extends Activity {
         err += writeToUsb("warnings.txt", wr.toString(), dir);
         String diag = "Battery Watchdog export " + stamp + "\n\n" + buildDiagnostics();
         err += writeToUsb("diagnostics.txt", diag, dir);
+        String report = buildReport();
+        err += writeToUsb("report.txt", report, dir);
         // the same files as one zip, ready to attach to an issue
         try {
             Map<String, String> z = new java.util.LinkedHashMap<String, String>();
             z.put("readings.csv", rd.toString()); z.put("drives.csv", dv.toString());
-            z.put("warnings.txt", wr.toString()); z.put("diagnostics.txt", diag);
+            z.put("warnings.txt", wr.toString()); z.put("diagnostics.txt", diag); z.put("report.txt", report);
             for (Map.Entry<String, String> e : readState(STATE_FILES).entrySet()) z.put("raw/" + e.getKey(), e.getValue());
             String zr = writeRootBytes(dir + ".zip", ShareZip.plain(z));
             if (zr.length() > 0) err += "zip: " + zr + "\n";
@@ -1083,7 +1089,7 @@ public class MainActivity extends Activity {
         if (err.length() > 0) return "Some files couldn't be written to " + dir + ":\n" + err
             + "\nraw/ on the drive: " + (rawList.length() > 0 ? rawList : "(empty)");
         return "Exported " + rows + " readings and " + drives + " drives (written via " + lastWriteMethod + ") to\n" + dir
-            + "\n\nreadings.csv and drives.csv open in Excel or Google Sheets. raw/ has the original files. "
+            + "\n\nreport.txt is the battery report. readings.csv and drives.csv open in Excel or Google Sheets. raw/ has the original files. "
             + "The .zip beside the folder has the same files, ready to attach to a \"Share battery data\" issue.";
     }
 
@@ -1093,6 +1099,72 @@ public class MainActivity extends Activity {
     }
 
     static String fmtSigned10(int v) { return (v > 0 ? "+" : v < 0 ? "-" : "") + fmt10(Math.abs(v)); }
+
+    // ---- battery report and warning history ------------------------------------
+
+    /** The report text (Report.java), from the files the service keeps. Runs root commands: not on the UI thread. */
+    String buildReport() {
+        String status = runRoot("cat " + STATE + "/status 2>/dev/null");
+        int soh = readSoh();
+        if (soh < 0) soh = parse(kv(status, "soh_raw"), -1);
+        return Report.build(loadDrives(status), runRoot("cat " + STATE + "/warnings 2>/dev/null"), warnPct, dropPct,
+                parse(kv(status, "pct10"), -1), parseL(kv(status, "updated"), 0), soh,
+                fw.length() > 0 ? fw : "?", appVersion(), System.currentTimeMillis() / 1000, java.util.TimeZone.getDefault());
+    }
+
+    void showReport() {
+        toast("Making the report\u2026");
+        new Thread(new Runnable() { public void run() {
+            final String text = buildReport();
+            handler.post(new Runnable() { public void run() {
+                if (isFinishing()) return;
+                TextView t = new TextView(MainActivity.this);
+                t.setText(text);
+                t.setTypeface(android.graphics.Typeface.MONOSPACE);
+                t.setTextSize(14);
+                t.setTextIsSelectable(true);
+                t.setPadding(dp(20), dp(12), dp(20), dp(12));
+                android.widget.HorizontalScrollView h = new android.widget.HorizontalScrollView(MainActivity.this);
+                h.addView(t);
+                ScrollView sv = new ScrollView(MainActivity.this);
+                sv.addView(h);
+                new AlertDialog.Builder(MainActivity.this).setTitle("Battery report").setView(sv)
+                    .setPositiveButton("Save to USB", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface di, int w) { saveReport(text); } })
+                    .setNegativeButton("Close", null).show();
+            } });
+        } }).start();
+    }
+
+    void saveReport(final String text) {
+        new Thread(new Runnable() { public void run() {
+            String usb = usbRoot();
+            final String msg;
+            if (usb == null) msg = NO_USB;
+            else {
+                String name = "BatteryWatchdog-report-" + new SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(new Date()) + ".txt";
+                String err = writeRoot(usb + "/" + name, text.replace("\n", "\r\n"));   // CRLF: opens cleanly in any editor
+                runRoot("sync");
+                msg = err.length() > 0 ? "Couldn't write " + name + " to " + usb + ":\n" + err
+                    : "Wrote " + name + " to " + usb + ".\n\nIt's a plain text file: print it or show it on a phone at a service visit.";
+            }
+            handler.post(new Runnable() { public void run() {
+                new AlertDialog.Builder(MainActivity.this).setTitle("Battery report").setMessage(msg)
+                    .setPositiveButton("Close", null).show();
+            } });
+        } }).start();
+    }
+
+    void showWarnings() {
+        List<Report.Warning> ws = Report.warnings(runRoot("cat " + STATE + "/warnings 2>/dev/null"));
+        StringBuilder b = new StringBuilder();
+        SimpleDateFormat f = new SimpleDateFormat("MMM d, yyyy  h:mm a", Locale.US);
+        for (Report.Warning w : ws) b.append(f.format(new Date(w.at * 1000))).append("\n").append(w.text).append("\n\n");
+        new AlertDialog.Builder(this)
+            .setTitle(ws.isEmpty() ? "Warning history" : "Warning history (" + ws.size() + ")")
+            .setMessage(ws.isEmpty() ? "No warnings so far." : b.toString().trim())
+            .setPositiveButton("Close", null).show();
+    }
 
     void clearHistory() {
         runRoot("rm -f " + STATE + "/log.csv " + STATE + "/log.old.csv " + STATE + "/sessions "
