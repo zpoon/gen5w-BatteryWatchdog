@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -14,10 +15,8 @@ import android.database.ContentObserver;
 import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.content.DialogInterface;
@@ -44,20 +43,52 @@ public class MainActivity extends Activity {
     static final String NEM = "/system/xbin/nemesis";
     static final String[] DECODE = { "Auto", "Integer", "Float" };
     static final int[] INTERVALS = { 60, 300, 900 };
-    static final int BG = Color.rgb(18, 20, 24), AMBER = Color.rgb(255, 170, 60),
-            GREEN = Color.rgb(110, 210, 140), MUTED = Color.rgb(150, 160, 170), ACCENT = Color.rgb(120, 180, 255);
 
-    boolean enabled = true, toastStart = false, advanced = false;
+    // ---- colours ------------------------------------------------------------
+    // Two palettes, picked from the car's day/night display mode (the head unit
+    // sets Android's night mode with it; found by the Launchpad /
+    // gen5w-preconditioning project). Anything other than "day" gets the dark one.
+    static final class Pal {
+        final int bg, card, line, text, muted, accent, onAccent, amber, green, red, grid, park;
+        Pal(int bg, int card, int line, int text, int muted, int accent, int onAccent,
+            int amber, int green, int red, int grid, int park) {
+            this.bg = bg; this.card = card; this.line = line; this.text = text; this.muted = muted;
+            this.accent = accent; this.onAccent = onAccent; this.amber = amber; this.green = green;
+            this.red = red; this.grid = grid; this.park = park;
+        }
+    }
+    static final Pal NIGHT = new Pal(Color.rgb(16, 18, 22), Color.rgb(28, 32, 38), Color.rgb(54, 60, 68),
+            Color.WHITE, Color.rgb(150, 160, 170), Color.rgb(120, 180, 255), Color.rgb(12, 24, 40),
+            Color.rgb(255, 170, 60), Color.rgb(110, 210, 140), Color.rgb(255, 120, 110),
+            Color.rgb(48, 53, 60), Color.rgb(110, 118, 128));
+    static final Pal DAY = new Pal(Color.rgb(234, 237, 241), Color.WHITE, Color.rgb(206, 212, 219),
+            Color.rgb(26, 30, 36), Color.rgb(90, 100, 110), Color.rgb(28, 104, 200), Color.WHITE,
+            Color.rgb(176, 100, 0), Color.rgb(26, 128, 70), Color.rgb(190, 54, 44),
+            Color.rgb(214, 219, 225), Color.rgb(136, 145, 154));
+    Pal pal = NIGHT;
+
+    boolean dayMode() {
+        int m = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return m == Configuration.UI_MODE_NIGHT_NO;
+    }
+
+    boolean enabled = true, toastStart = false;
     int warnPct = 60, dropPct = 15, decode = 1, scaleX10 = 10, interval = 300;
 
-    LinearLayout sohBox;
-    TextView sohTitle, sohValue;
-    TextView parkLabel, ctxLabel, sumLabel;
-    TextView bigLabel, updLabel, sohLabel, warnLabel, warnThrLabel, dropThrLabel, rawLabel;
-    Button enBtn, toastBtn, decBtn, scaleBtn, intBtn, advBtn;
-    LinearLayout advBox;
-    Button overrideBtn;
+    // home
+    View home;
+    LinearLayout banner, tiles, tileRowA, tileRowB, dialCard;
+    TextView bannerText, pill, updLabel, ctxLabel;
+    Dial dial;
+    Tile tParked, tDrain, tLowest, tSoh;
     Chart chart;
+    TextView legend;
+    // settings
+    View settings;
+    TextView savedLabel, rawLabel, toolOut;
+    Seg enSeg, popSeg, intSeg, decSeg, scaleSeg;
+    Stepper warnStep, dropStep;
+    TextView overrideBtn;
 
     // auto-refresh while the screen is open (the service samples every few minutes)
     final Handler handler = new Handler();
@@ -66,145 +97,222 @@ public class MainActivity extends Activity {
     };
 
     /*
-     * Layout for the 1920x720 Gen5W screen: three columns, no page scrolling.
-     *   left  (3) : live 12V reading, warning, SOH, read-sensor button
-     *   middle(5) : chart, full height
-     *   right (3) : settings (scrolls on its own if it ever overflows)
+     * Two pages for the 1920x720 Gen5W screen, no page scrolling:
+     *   home     : warning banner (only while there is one); a dial for the 12V
+     *              beside four stat tiles and the drives chart
+     *   settings : three cards (Warnings, Sensor, Tools), opened from home.
+     *              Changes save by themselves.
      */
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        // drop the system title bar: the app draws its own title in the left column
+        // drop the system title bar: the app draws its own
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        pal = dayMode() ? DAY : NIGHT;
         loadConfig();
 
-        LinearLayout root = new LinearLayout(this);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
         rootView = root;
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setBackgroundColor(BG);
-        int pad = dp(16);
-        root.setPadding(pad, pad, pad, pad);
-
-        // ---- left: status --------------------------------------------------
-        // Compact so the SOH box always fits on the 720 px-tall screen; the
-        // column also scrolls on its own as a fallback. The read-sensor button
-        // lives under Advanced now.
-        LinearLayout left = column();
-        left.setPadding(0, 0, dp(12), 0);
-        TextView t = title("Battery Watchdog");
-        t.setTextSize(20);
-        t.setPadding(0, 0, 0, dp(2));
-        left.addView(t);
-        bigLabel = new TextView(this);
-        bigLabel.setTextColor(Color.WHITE);
-        bigLabel.setTextSize(48);
-        bigLabel.setIncludeFontPadding(false);
-        left.addView(bigLabel);
-        updLabel = hint("");
-        left.addView(updLabel);
-        parkLabel = new TextView(this);
-        parkLabel.setTextColor(Color.WHITE);
-        parkLabel.setTextSize(15);
-        left.addView(parkLabel);
-        ctxLabel = hint("");
-        ctxLabel.setPadding(0, dp(2), 0, dp(2));
-        left.addView(ctxLabel);
-        warnLabel = new TextView(this);
-        warnLabel.setTextColor(AMBER);
-        warnLabel.setTextSize(16);
-        warnLabel.setPadding(0, dp(2), 0, dp(6));
-        left.addView(warnLabel);
-        sohLabel = hint("");
-        sohLabel.setVisibility(View.GONE);
-        left.addView(sohLabel);
-        // HV battery health box: read live, not logged or monitored
-        sohBox = new LinearLayout(this);
-        sohBox.setOrientation(LinearLayout.VERTICAL);
-        sohBox.setPadding(dp(14), dp(8), dp(14), dp(10));
-        sohTitle = new TextView(this);
-        sohTitle.setText("HV battery health (SOH)");
-        sohTitle.setTextSize(14);
-        sohBox.addView(sohTitle);
-        sohValue = new TextView(this);
-        sohValue.setTextSize(22);
-        sohValue.setIncludeFontPadding(false);
-        sohBox.addView(sohValue);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        sp.setMargins(0, dp(4), 0, dp(4));
-        left.addView(sohBox, sp);
-        TextView sumHead = section("Last 7 days");
-        sumHead.setPadding(0, dp(8), 0, dp(2));
-        left.addView(sumHead);
-        sumLabel = new TextView(this);
-        sumLabel.setTextColor(Color.WHITE);
-        sumLabel.setTextSize(14);
-        left.addView(sumLabel);
-        ScrollView leftScroll = new ScrollView(this);
-        leftScroll.addView(left);
-
-        // ---- middle: chart -------------------------------------------------
-        LinearLayout mid = column();
-        mid.setPadding(dp(16), 0, dp(16), 0);
-        mid.addView(section("Recent drives \u00B7 12V at start (white) and end (blue) \u00B7 dashed = parked"));
-        chart = new Chart(this, dp(1));
-        mid.addView(chart, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        // ---- right: settings -----------------------------------------------
-        ScrollView rightScroll = new ScrollView(this);
-        rightCol = rightScroll;
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        rightScroll.addView(right);
-
-        right.addView(button("Save", new View.OnClickListener() { public void onClick(View v) { saveConfig(); } }));
-        right.addView(hint("Applies from the next drive."));
-        right.addView(section("Warnings"));
-        enBtn = button("", new View.OnClickListener() { public void onClick(View v) { enabled = !enabled; refreshButtons(); } });
-        right.addView(enBtn);
-        warnThrLabel = label();
-        right.addView(warnThrLabel);
-        right.addView(seek(30, 90, warnPct, new Setter() { public void set(int v) { warnPct = v; refreshButtons(); } }));
-        dropThrLabel = label();
-        right.addView(dropThrLabel);
-        right.addView(seek(5, 40, dropPct, new Setter() { public void set(int v) { dropPct = v; refreshButtons(); } }));
-        toastBtn = button("", new View.OnClickListener() { public void onClick(View v) { toastStart = !toastStart; refreshButtons(); } });
-        right.addView(toastBtn);
-
-        advBtn = button("", new View.OnClickListener() { public void onClick(View v) { advanced = !advanced; refreshButtons(); } });
-        right.addView(advBtn);
-        advBox = new LinearLayout(this);
-        advBox.setOrientation(LinearLayout.VERTICAL);
-        intBtn = button("", new View.OnClickListener() { public void onClick(View v) {
-            int i = 0; while (i < INTERVALS.length && INTERVALS[i] != interval) i++;
-            interval = INTERVALS[(i + 1) % INTERVALS.length]; refreshButtons(); } });
-        advBox.addView(intBtn);
-        decBtn = button("", new View.OnClickListener() { public void onClick(View v) { decode = (decode + 1) % 3; refreshButtons(); } });
-        advBox.addView(decBtn);
-        scaleBtn = button("", new View.OnClickListener() { public void onClick(View v) { scaleX10 = scaleX10 == 10 ? 5 : 10; refreshButtons(); } });
-        advBox.addView(scaleBtn);
-        advBox.addView(button("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
-        rawLabel = hint("");
-        advBox.addView(rawLabel);
-        advBox.addView(button("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
-        advBox.addView(button("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }));
-        advBox.addView(button("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }));
-        advBox.addView(button("Export to USB", new View.OnClickListener() { public void onClick(View v) { exportToUsb(); } }));
-        advBox.addView(button("Share data\u2026", new View.OnClickListener() { public void onClick(View v) { showShareSteps(); } }));
-        advBox.addView(button("Clear history", new View.OnClickListener() { public void onClick(View v) { clearHistory(); } }));
-        overrideBtn = button("Unverified firmware: use built-in numbers\u2026", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
-        advBox.addView(overrideBtn);
-        right.addView(advBox);
-
-        right.setPadding(0, 0, 0, dp(56));   // keep the last button clear of the screen's rounded corner
-
-        root.addView(leftScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
-        root.addView(mid, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
-        root.addView(rightScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3f));
+        root.setBackgroundColor(pal.bg);
+        home = buildHome();
+        settings = buildSettings();
+        settings.setVisibility(View.GONE);
+        root.addView(home);
+        root.addView(settings);
 
         setContentView(root);
         refreshButtons();
         startVerification();
         handler.postDelayed(askShare, 2000);
+    }
+
+    View buildHome() {
+        LinearLayout page = column();
+
+        LinearLayout head = row();
+        TextView t = new TextView(this);
+        t.setText("Battery Watchdog"); t.setTextColor(pal.text); t.setTextSize(22);
+        head.addView(t, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView gear = chip("Settings ›", new View.OnClickListener() { public void onClick(View v) { showSettings(true); } });
+        gear.setPadding(dp(22), 0, dp(22), 0);
+        head.addView(gear, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(52)));
+        page.addView(head);
+
+        banner = row();
+        banner.setPadding(dp(16), dp(10), dp(16), dp(10));
+        bannerText = new TextView(this);
+        bannerText.setTextSize(17);
+        banner.addView(bannerText);
+        banner.setVisibility(View.GONE);
+        page.addView(banner, margins(LinearLayout.LayoutParams.MATCH_PARENT, 0, dp(10), 0, 0));
+
+        LinearLayout body = row();
+        body.setGravity(android.view.Gravity.TOP);
+        // left: the 12V dial and what goes with it
+        dialCard = column();
+        dialCard.setGravity(android.view.Gravity.CENTER);
+        dialCard.setPadding(dp(14), dp(14), dp(14), dp(14));
+        dialCard.setBackgroundDrawable(box(pal.card, pal.line));
+        dial = new Dial(this, dp(1));
+        dial.pal = pal;
+        dialCard.addView(dial, new LinearLayout.LayoutParams(dp(230), dp(230)));
+        pill = new TextView(this);
+        pill.setTextSize(16);
+        pill.setPadding(dp(16), dp(4), dp(16), dp(4));
+        dialCard.addView(pill, margins(LinearLayout.LayoutParams.WRAP_CONTENT, 0, dp(4), 0, dp(8)));
+        updLabel = hint("");
+        updLabel.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        dialCard.addView(updLabel);
+        ctxLabel = new TextView(this);
+        ctxLabel.setTextColor(pal.text); ctxLabel.setTextSize(15);
+        ctxLabel.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        dialCard.addView(ctxLabel);
+        body.addView(dialCard, new LinearLayout.LayoutParams(dp(300), LinearLayout.LayoutParams.MATCH_PARENT));
+
+        // right: tiles over the chart
+        LinearLayout right = column();
+        tiles = row();
+        tileRowA = row(); tileRowB = row();
+        tParked = new Tile("Parked before this drive");
+        tDrain  = new Tile("Parked drain, last 7 days");
+        tLowest = new Tile("Lowest start, last 7 days");
+        tSoh    = new Tile("HV battery health");
+        tileRowA.addView(tParked.v, tileLp(false)); tileRowA.addView(tDrain.v, tileLp(true));
+        tileRowB.addView(tLowest.v, tileLp(false)); tileRowB.addView(tSoh.v, tileLp(true));
+        tiles.addView(tileRowA); tiles.addView(tileRowB);
+        right.addView(tiles);
+
+        LinearLayout chartCard = column();
+        chartCard.setPadding(dp(14), dp(10), dp(14), dp(8));
+        chartCard.setBackgroundDrawable(box(pal.card, pal.line));
+        legend = new TextView(this);
+        legend.setTextSize(14);
+        chartCard.addView(legend);
+        chart = new Chart(this, dp(1), pal);
+        chartCard.addView(chart, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        right.addView(chartCard, vfill(0, dp(10), 0, 0));
+        body.addView(right, hfill(dp(14), 0, 0, 0));
+        page.addView(body, vfill(0, dp(12), 0, 0));
+        layoutTiles(false);
+        return page;
+    }
+
+    View buildSettings() {
+        LinearLayout page = column();
+
+        LinearLayout head = row();
+        TextView back = chip("‹ Back", new View.OnClickListener() { public void onClick(View v) { showSettings(false); } });
+        back.setPadding(dp(22), 0, dp(22), 0);
+        head.addView(back, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(52)));
+        TextView t = new TextView(this);
+        t.setText("Settings"); t.setTextColor(pal.text); t.setTextSize(22);
+        t.setPadding(dp(18), 0, 0, 0);
+        head.addView(t);
+        savedLabel = hint("Changes save by themselves and apply from the next drive.");
+        savedLabel.setPadding(0, 0, 0, 0);
+        savedLabel.setGravity(android.view.Gravity.RIGHT);
+        head.addView(savedLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        page.addView(head);
+
+        LinearLayout cards = row();
+        cards.setGravity(android.view.Gravity.TOP);
+
+        // ---- warnings
+        LinearLayout w = card("Warnings");
+        w.addView(caption("Monitor the 12V battery"));
+        enSeg = new Seg(new String[] { "On", "Off" }, new Setter() { public void set(int i) { enabled = i == 0; changed(); } });
+        w.addView(enSeg.row);
+        w.addView(caption("Warn when it starts below"));
+        warnStep = new Stepper(30, 90, warnPct, "%", new Setter() { public void set(int v) { warnPct = v; changed(); } });
+        w.addView(warnStep.row);
+        w.addView(caption("Warn when it drops this much while parked"));
+        dropStep = new Stepper(5, 40, dropPct, " pts", new Setter() { public void set(int v) { dropPct = v; changed(); } });
+        w.addView(dropStep.row);
+        w.addView(caption("Pop-up when the car starts"));
+        popSeg = new Seg(new String[] { "Warnings only", "Every start" }, new Setter() { public void set(int i) { toastStart = i == 1; changed(); } });
+        w.addView(popSeg.row);
+
+        // ---- sensor
+        LinearLayout s = card("Sensor");
+        s.addView(caption("Read every (screen on)"));
+        intSeg = new Seg(new String[] { "1 min", "5 min", "15 min" }, new Setter() { public void set(int i) { interval = INTERVALS[i]; changed(); } });
+        s.addView(intSeg.row);
+        s.addView(caption("Decode the value as"));
+        decSeg = new Seg(DECODE, new Setter() { public void set(int i) { decode = i; changed(); } });
+        s.addView(decSeg.row);
+        s.addView(caption("Scale"));
+        scaleSeg = new Seg(new String[] { "1 raw = 1 %", "1 raw = 0.5 %" }, new Setter() { public void set(int i) { scaleX10 = i == 0 ? 10 : 5; changed(); } });
+        s.addView(scaleSeg.row);
+        s.addView(tool("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
+        rawLabel = hint("");
+        s.addView(rawLabel);
+
+        // ---- tools
+        LinearLayout tl = card("Tools");
+        tl.addView(tool("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
+        tl.addView(tool("Export to USB", new View.OnClickListener() { public void onClick(View v) { exportToUsb(); } }));
+        tl.addView(tool("Share data…", new View.OnClickListener() { public void onClick(View v) { showShareSteps(); } }));
+        LinearLayout pair = row();
+        pair.addView(tool("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }), tileLp(false));
+        pair.addView(tool("Test run (10 s)", new View.OnClickListener() { public void onClick(View v) { testRun(); } }), tileLp(true));
+        pair.setPadding(0, dp(10), 0, 0);
+        tl.addView(pair);
+        TextView clear = tool("Clear history…", new View.OnClickListener() { public void onClick(View v) { confirmClear(); } });
+        clear.setTextColor(pal.red);
+        tl.addView(clear);
+        overrideBtn = tool("Unverified firmware: use built-in numbers…", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
+        overrideBtn.setVisibility(View.GONE);
+        tl.addView(overrideBtn);
+        toolOut = hint("");
+        tl.addView(toolOut);
+
+        cards.addView(scroll(w), hfill(0, 0, 0, 0));
+        cards.addView(scroll(s), hfill(dp(14), 0, 0, 0));
+        cards.addView(scroll(tl), hfill(dp(14), 0, 0, 0));
+        page.addView(cards, vfill(0, dp(12), 0, 0));
+        return page;
+    }
+
+    void showSettings(boolean on) {
+        if (!on) flushSave();
+        settings.setVisibility(on ? View.VISIBLE : View.GONE);
+        home.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (!on) refreshData();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (settings.getVisibility() == View.VISIBLE) showSettings(false);
+        else super.onBackPressed();
+    }
+
+    // ---- saving: every change saves by itself, shortly after the last tap ------
+    boolean dirty;
+    final Runnable saveLater = new Runnable() { public void run() { flushSave(); } };
+
+    void changed() {
+        refreshButtons();
+        dirty = true;
+        handler.removeCallbacks(saveLater);
+        handler.postDelayed(saveLater, 800);
+    }
+
+    void flushSave() {
+        handler.removeCallbacks(saveLater);
+        if (!dirty) return;
+        dirty = false;
+        String r = saveConfig();
+        if (r.length() > 0) { toast("Couldn't save: " + r); savedLabel.setTextColor(pal.red); savedLabel.setText("Not saved: " + r); }
+        else { savedLabel.setTextColor(pal.muted); savedLabel.setText("Saved. Applies from the next drive."); }
+    }
+
+    void confirmClear() {
+        new AlertDialog.Builder(this).setTitle("Clear history?")
+            .setMessage("This deletes every logged reading, drive and warning on this car. Settings are kept. "
+                + "If you might share your data later, export it to USB first.")
+            .setPositiveButton("Clear", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) { clearHistory(); } })
+            .setNegativeButton("Cancel", null).show();
     }
 
     @Override
@@ -221,6 +329,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        flushSave();
         handler.removeCallbacks(tick);
         if (splitObserved) { getContentResolver().unregisterContentObserver(splitObserver); splitObserved = false; }
     }
@@ -229,11 +338,10 @@ public class MainActivity extends Activity {
     // Hyundai's split view draws the map panel over the right of the screen without
     // resizing this app. Settings.System "split_screen_status" is 1 while it's open
     // (found by the Launchpad / gen5w-preconditioning project). The panel's width
-    // isn't reported (about 29 % in photos), so a third is kept clear, and the
-    // settings column is hidden; close the split view to change settings.
+    // isn't reported (about 29 % in photos), so a third is kept clear and the
+    // tiles go two by two to fit.
     static final String SPLIT_SETTING = "split_screen_status";
-    LinearLayout rootView;
-    View rightCol;
+    View rootView;
     boolean compact, splitObserved;
     final ContentObserver splitObserver = new ContentObserver(handler) {
         @Override public void onChange(boolean selfChange) { applySplit(); }
@@ -249,7 +357,18 @@ public class MainActivity extends Activity {
         int pad = dp(16);
         int right = compact ? Math.round(getResources().getDisplayMetrics().widthPixels / 3f) : pad;
         rootView.setPadding(pad, pad, right, pad);
-        rightCol.setVisibility(compact ? View.GONE : View.VISIBLE);
+        layoutTiles(compact);
+    }
+
+    /** one row of four tiles, or two rows of two when the screen is narrowed */
+    void layoutTiles(boolean twoRows) {
+        tiles.setOrientation(twoRows ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        tileRowA.setLayoutParams(twoRows ? new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                : new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams lb = twoRows ? new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                : new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        if (twoRows) lb.topMargin = dp(10); else lb.leftMargin = dp(10);
+        tileRowB.setLayoutParams(lb);
     }
 
     // ---- data ---------------------------------------------------------------
@@ -258,64 +377,121 @@ public class MainActivity extends Activity {
         String state = kv(status, "state"), pct = kv(status, "pct10"), soh = kv(status, "soh_raw");
         String upd = kv(status, "updated"), warn = kv(status, "warn");
         int p = parse(pct, -1);
-        bigLabel.setTextColor(Color.WHITE);
         boolean paused = "unverified".equals(state) || "unverified".equals(verifyState) || "interface_mismatch".equals(verifyState);
         if (overrideBtn != null) overrideBtn.setVisibility("unverified".equals(verifyState) ? View.VISIBLE : View.GONE);
+        dial.warn10 = warnPct * 10;
+        List<long[]> drives = loadDrives(status);
+        legend.setText(legendText());
         if (paused && !verified()) {
-            bigLabel.setText("Paused");
-            bigLabel.setTextColor(AMBER);
-            updLabel.setText("interface_mismatch".equals(verifyState)
+            dial.show(-1, "Paused", pal.amber);
+            setPill("Paused", pal.amber);
+            updLabel.setText("Nothing is read from the car.");
+            ctxLabel.setText("");
+            setBanner("interface_mismatch".equals(verifyState)
                 ? "The car's telematics service isn't the one this package was built for, so nothing is read."
-                : "This firmware isn't verified, so nothing is read from the car. See Advanced \u2192 Diagnostics.");
-            parkLabel.setText(""); ctxLabel.setText(""); warnLabel.setText(""); sohLabel.setVisibility(View.GONE);
-            showSoh(-1);
+                : "This firmware isn't verified yet, so nothing is read from the car. See Settings → Tools → Diagnostics.");
+            tParked.set("--", "", pal.text, false); tDrain.set("--", "", pal.text, false);
+            tLowest.set("--", "", pal.text, false); tSoh.set("--", "", pal.text, false);
+            chart.setData(lastN(drives, 30), warnPct * 10, dropPct * 10);
             return;
         }
-        if ("disabled".equals(state)) bigLabel.setText("Off");
-        else if (p >= 0) {
-            bigLabel.setText(fmt10(p) + "%");
-            bigLabel.setTextColor(p < warnPct * 10 ? AMBER : GREEN);
-        }
-        else if (state.length() == 0) bigLabel.setText("Waiting…");
-        else bigLabel.setText("No reading");
-        updLabel.setText(upd.length() > 0 ? "12V battery \u00B7 updated " + time(parse(upd, 0))
-                : "No reading yet. If this lasts, see Advanced \u2192 Diagnostics.");
-        // parked time before this drive, and how the 12V changed meanwhile
-        int pMin = parse(kv(status, "parked_min"), -1);
-        int pDrop = parse(kv(status, "parked_drop10"), Integer.MIN_VALUE);
-        int pRate = parse(kv(status, "parked_rate10_day"), Integer.MIN_VALUE);
-        if (pMin >= 0 && pDrop != Integer.MIN_VALUE) {
-            StringBuilder pk = new StringBuilder("Parked ").append(duration(pMin)).append(" before this drive: ");
-            pk.append(pDrop > 0 ? "\u2212" + fmt10(pDrop) + " pts" : pDrop < 0 ? "+" + fmt10(-pDrop) + " pts" : "no change");
-            if (pRate != Integer.MIN_VALUE && pDrop > 0) pk.append("  (\u2212").append(fmt10(pRate)).append("/day)");
-            parkLabel.setText(pk.toString());
-            parkLabel.setTextColor(pDrop >= dropPct * 10 ? AMBER : Color.WHITE);
-        } else {
-            parkLabel.setText("");
-        }
+        boolean low = p >= 0 && p < warnPct * 10;
+        if ("disabled".equals(state)) { dial.show(-1, "Off", pal.muted); setPill("Monitor off", pal.muted); }
+        else if (p >= 0) { dial.show(p, fmt10(p) + "%", low ? pal.amber : pal.green); setPill(low ? "Low" : "OK", low ? pal.amber : pal.green); }
+        else if (state.length() == 0) { dial.show(-1, "…", pal.muted); setPill(null, 0); }
+        else { dial.show(-1, "--", pal.muted); setPill("No reading", pal.muted); }
+        updLabel.setText(upd.length() > 0 ? "Read " + time(parse(upd, 0))
+                : "No reading yet. If this lasts, see Settings → Tools → Diagnostics.");
         // context: main battery charge and outside temperature
         int hv = parse(kv(status, "hv10"), -1);
         int tc = parse(kv(status, "temp_c"), Integer.MIN_VALUE);
         StringBuilder cx = new StringBuilder();
         if (hv >= 0) cx.append("Main battery ").append(fmt10(hv)).append("%");
         if (tc != Integer.MIN_VALUE) {
-            if (cx.length() > 0) cx.append("  \u00B7  ");
-            cx.append("Outside ").append(Math.round(tc * 9 / 5f + 32)).append("\u00B0F");
+            if (cx.length() > 0) cx.append("\n");
+            cx.append("Outside ").append(Math.round(tc * 9 / 5f + 32)).append("°F");
         }
         ctxLabel.setText(cx.toString());
+
+        // banner: the latest warning, else a decode problem, else nothing
         boolean noRead = "no_reading".equals(state);
-        sohLabel.setText(noRead ? "The 12V value couldn't be decoded. Check Advanced settings." : "");
-        sohLabel.setVisibility(noRead ? View.VISIBLE : View.GONE);
+        if (warn.length() > 0) setBanner("⚠  " + warn);
+        else if (noRead) setBanner("The 12V value couldn't be decoded. Check Settings → Sensor.");
+        else setBanner(null);
+
+        // tile: parked time before this drive, and how the 12V changed meanwhile
+        int pMin = parse(kv(status, "parked_min"), -1);
+        int pDrop = parse(kv(status, "parked_drop10"), Integer.MIN_VALUE);
+        int pRate = parse(kv(status, "parked_rate10_day"), Integer.MIN_VALUE);
+        if (pMin >= 0 && pDrop != Integer.MIN_VALUE) {
+            boolean bad = pDrop >= dropPct * 10;
+            String sub = duration(pMin) + (pRate != Integer.MIN_VALUE && pDrop > 0 ? "  ·  −" + fmt10(pRate) + "/day" : "");
+            tParked.set(pDrop > 0 ? "−" + fmt10(pDrop) + " pts" : pDrop < 0 ? "+" + fmt10(-pDrop) + " pts" : "No change",
+                    sub, bad ? pal.amber : pal.text, bad);
+        } else {
+            tParked.set("--", "Shows after a park", pal.text, false);
+        }
+
+        // tiles: the last 7 days
+        int[] wk = week(drives);   // {drives, lowest start, drain/day (or MIN), recharges}
+        if (wk[0] == 0) {
+            tDrain.set("--", "No drives yet", pal.text, false);
+            tLowest.set("--", "No drives yet", pal.text, false);
+        } else {
+            String rech = wk[3] + (wk[3] == 1 ? " recharge" : " recharges") + " while parked";
+            if (wk[2] == Integer.MIN_VALUE) tDrain.set("--", "Not enough parked time yet", pal.text, false);
+            else tDrain.set((wk[2] > 0 ? "−" + fmt10(wk[2]) : wk[2] < 0 ? "+" + fmt10(-wk[2]) : "0.0") + " /day",
+                    rech, pal.text, false);
+            boolean lowStart = wk[1] < warnPct * 10;
+            tLowest.set(fmt10(wk[1]) + "%", wk[0] + (wk[0] == 1 ? " drive" : " drives"), lowStart ? pal.amber : pal.text, lowStart);
+        }
+
         int sohNow = readSoh();
         if (sohNow < 0) sohNow = parse(soh, -1);   // fall back to the service's last value
         showSoh(sohNow);
-        warnLabel.setText(warn.length() > 0 ? "\u26A0 " + warn : "");
-        warnLabel.setTextColor(AMBER);
-        warnLabel.setVisibility(warn.length() > 0 ? View.VISIBLE : View.GONE);
 
-        List<long[]> drives = loadDrives(status);
-        chart.setData(drives.size() > 30 ? drives.subList(drives.size() - 30, drives.size()) : drives, warnPct * 10, dropPct * 10);
-        sumLabel.setText(summary(drives));
+        chart.setData(lastN(drives, 30), warnPct * 10, dropPct * 10);
+    }
+
+    static List<long[]> lastN(List<long[]> l, int n) { return l.size() > n ? l.subList(l.size() - n, l.size()) : l; }
+
+    CharSequence legendText() {
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        b.append("Last 30 drives      ");
+        legendItem(b, "●", pal.text, " start   ");
+        legendItem(b, "●", pal.accent, " end   ");
+        legendItem(b, "- -", pal.park, " parked   ");
+        legendItem(b, "- -", pal.green, " recharged   ");
+        legendItem(b, "—", pal.amber, " warn below " + warnPct + "%");
+        return b;
+    }
+
+    void legendItem(android.text.SpannableStringBuilder b, String mark, int color, String label) {
+        int s = b.length();
+        b.append(mark);
+        b.setSpan(new android.text.style.ForegroundColorSpan(color), s, b.length(), 0);
+        int s2 = b.length();
+        b.append(label);
+        b.setSpan(new android.text.style.ForegroundColorSpan(pal.muted), s2, b.length(), 0);
+    }
+
+    void setBanner(String text) {
+        if (text == null) { banner.setVisibility(View.GONE); return; }
+        bannerText.setText(text);
+        bannerText.setTextColor(pal.amber);
+        banner.setBackgroundDrawable(box(mix(pal.amber, pal.card, 0.16f), pal.amber));
+        banner.setVisibility(View.VISIBLE);
+    }
+
+    void setPill(String text, int color) {
+        if (text == null) { pill.setVisibility(View.INVISIBLE); return; }
+        pill.setVisibility(View.VISIBLE);
+        pill.setText(text);
+        pill.setTextColor(color);
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(mix(color, pal.card, 0.18f));
+        d.setCornerRadius(dp(20));
+        pill.setBackgroundDrawable(d);
     }
 
     /**
@@ -354,8 +530,11 @@ public class MainActivity extends Activity {
         l.add(d);
     }
 
-    /** Last-7-days summary: lowest start, parked drain per day, parked recharges. */
-    String summary(List<long[]> drives) {
+    /**
+     * Last 7 days: {drives, lowest start (tenths), parked drain per day (tenths,
+     * positive = fell; MIN_VALUE if under an hour parked), parked recharges}.
+     */
+    static int[] week(List<long[]> drives) {
         long now = System.currentTimeMillis() / 1000, from = now - 7 * 86400L;
         int lowest = Integer.MAX_VALUE, n = 0, recharges = 0;
         long parkedMin = 0, parkedDrop = 0;
@@ -372,18 +551,8 @@ public class MainActivity extends Activity {
             if (drop <= -10) recharges++;                   // rose 1+ pt: the car topped it up
             parkedMin += gap; parkedDrop += drop;
         }
-        if (n == 0) return "No drives recorded yet.";
-        StringBuilder b = new StringBuilder();
-        b.append(n).append(n == 1 ? " drive" : " drives").append(", lowest start ").append(fmt10(lowest)).append("%\n");
-        if (parkedMin >= 60) {
-            long rate = parkedDrop * 1440 / parkedMin;      // tenths of a point per day
-            b.append("Parked: ").append(rate > 0 ? "\u2212" + fmt10((int) rate) : rate < 0 ? "+" + fmt10((int) -rate) : "0.0")
-             .append(" pts/day on average\n");
-        } else {
-            b.append("Parked: not enough parked time yet\n");
-        }
-        b.append("Recharged while parked: ").append(recharges).append(recharges == 1 ? " time" : " times");
-        return b.toString();
+        int rate = parkedMin >= 60 ? (int) (parkedDrop * 1440 / parkedMin) : Integer.MIN_VALUE;
+        return new int[] { n, n == 0 ? -1 : lowest, rate, recharges };
     }
 
     // SOH: tm_hscan_service 214 (0xd6) returns one raw byte, a health index (100 = new).
@@ -397,21 +566,12 @@ public class MainActivity extends Activity {
         try { long v = Long.parseLong(w[1], 16); return v > 0 && v <= 100 ? (int) v : -1; } catch (Exception e) { return -1; }
     }
 
-    // green >= 90, amber 75-89, red < 75, gray if unknown
+    // green >= 90, amber 75-89, red < 75, plain if unknown
     void showSoh(int v) {
-        int bg, fg; String text;
-        if (v < 0)       { bg = Color.rgb(42, 47, 54);  fg = MUTED;                text = "--"; }
-        else if (v >= 90){ bg = Color.rgb(22, 60, 38);  fg = GREEN;                text = v + "%  Good"; }
-        else if (v >= 75){ bg = Color.rgb(70, 50, 18);  fg = AMBER;                text = v + "%  Fair"; }
-        else             { bg = Color.rgb(80, 28, 28);  fg = Color.rgb(255, 120, 110); text = v + "%  Low"; }
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(bg);
-        d.setCornerRadius(dp(10));
-        d.setStroke(dp(2), fg);
-        sohBox.setBackgroundDrawable(d);
-        sohTitle.setTextColor(fg);
-        sohValue.setTextColor(fg);
-        sohValue.setText(text);
+        if (v < 0)        tSoh.set("--", "Not available", pal.text, false);
+        else if (v >= 90) tSoh.set(v + "%", "Good", pal.green, false);
+        else if (v >= 75) tSoh.set(v + "%", "Fair", pal.amber, true);
+        else              tSoh.set(v + "%", "Low", pal.red, true);
     }
 
     void readNow() {
@@ -654,7 +814,7 @@ public class MainActivity extends Activity {
                 + "later failed, would help build smarter checks for everyone.\n\n"
                 + "This is completely optional, and nothing is ever sent from your car. If you'd like to help, "
                 + "after a few weeks of driving you can export your data to a USB drive and share it on GitHub.\n\n"
-                + "You won't be asked again. The steps are always in Advanced \u2192 Share data.")
+                + "You won't be asked again. The steps are always in Settings \u2192 Tools \u2192 Share data.")
             .setPositiveButton("Show me how", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface di, int w) { showShareSteps(); } })
             .setNegativeButton("No thanks", null).show();
@@ -663,7 +823,7 @@ public class MainActivity extends Activity {
     void showShareSteps() {
         new AlertDialog.Builder(this).setTitle("Share your data (optional)")
             .setMessage("1. Drive as usual for a few weeks. The longer the log, the more useful it is.\n"
-                + "2. Insert a USB drive and tap Export below (or Advanced \u2192 Export to USB). Choose "
+                + "2. Insert a USB drive and tap Export below (or Settings \u2192 Tools \u2192 Export to USB). Choose "
                 + "\"For sharing, dates hidden\" if you'd rather not show when you drive.\n"
                 + "3. On a computer or phone, go to github.com/zpoon/gen5w-BatteryWatchdog, open Issues \u2192 "
                 + "New issue \u2192 Share battery data, fill in what you know about your 12V battery, and attach "
@@ -757,7 +917,7 @@ public class MainActivity extends Activity {
                 + NEM + " service stop " + SVC_ID + " 2>&1; "
                 + NEM + " service start " + SVC_ID + " 2>&1; sleep 3; "
                 + NEM + " service status " + SVC_ID + " 2>&1");
-        rawLabel.setText("Restart: " + r.trim().replace("\n", "  |  "));
+        toolOut.setText("Restart: " + r.trim().replace("\n", "  |  "));
         toast("Monitor restarted. Check Diagnostics in 30 seconds.");
     }
 
@@ -1137,7 +1297,8 @@ public class MainActivity extends Activity {
         interval   = readInt("interval_s", 300);
     }
 
-    void saveConfig() {
+    /** "" when saved, else the error */
+    String saveConfig() {
         String cmd = "mkdir -p " + STATE
             + "; echo " + (enabled ? 1 : 0) + " > " + STATE + "/enabled"
             + "; echo " + (toastStart ? 1 : 0) + " > " + STATE + "/toast_start"
@@ -1147,19 +1308,167 @@ public class MainActivity extends Activity {
             + "; echo " + scaleX10 + " > " + STATE + "/scale_x10"
             + "; echo " + interval + " > " + STATE + "/interval_s";
         String r = runRoot(cmd);
-        toast(r.startsWith("ERR") ? "Save failed: " + r : "Saved");
+        return r.startsWith("ERR") ? r : "";
     }
 
     void refreshButtons() {
-        enBtn.setText(enabled ? "Monitor: on" : "Monitor: off");
-        warnThrLabel.setText("Warn below " + warnPct + "%");
-        dropThrLabel.setText("Warn if it drops " + dropPct + "+ pts while parked");
-        toastBtn.setText(toastStart ? "Pop-up every start: on" : "Pop-up every start: warnings only");
-        intBtn.setText("Sample every " + (interval / 60) + " min");
-        advBtn.setText(advanced ? "Advanced \u25B4" : "Advanced \u25BE");
-        advBox.setVisibility(advanced ? View.VISIBLE : View.GONE);
-        decBtn.setText("Decode as: " + DECODE[decode]);
-        scaleBtn.setText("Scale: " + (scaleX10 == 10 ? "1 raw = 1 %" : "1 raw = 0.5 %"));
+        enSeg.select(enabled ? 0 : 1);
+        popSeg.select(toastStart ? 1 : 0);
+        int i = 0; while (i < INTERVALS.length && INTERVALS[i] != interval) i++;
+        intSeg.select(i);                   // none lit if the file holds another value
+        decSeg.select(decode);
+        scaleSeg.select(scaleX10 == 10 ? 0 : 1);
+        warnStep.show(warnPct);
+        dropStep.show(dropPct);
+    }
+
+    // ---- widgets ----------------------------------------------------------------
+
+    /** The 12V level as a 270-degree ring, with a tick at the warning level. */
+    static class Dial extends View {
+        Pal pal = NIGHT;
+        int value10 = -1, warn10 = 600, color;
+        String text = "…";
+        final float d;
+        final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG), big = new Paint(Paint.ANTI_ALIAS_FLAG),
+                small = new Paint(Paint.ANTI_ALIAS_FLAG), tickP = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final android.graphics.RectF oval = new android.graphics.RectF();
+
+        Dial(Context c, float density) {
+            super(c);
+            d = density;
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeCap(Paint.Cap.ROUND);
+            big.setTextAlign(Paint.Align.CENTER);
+            small.setTextAlign(Paint.Align.CENTER);
+            tickP.setStrokeCap(Paint.Cap.ROUND);
+        }
+
+        void show(int v10, String t, int col) { value10 = v10; text = t; color = col; invalidate(); }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float size = Math.min(getWidth(), getHeight()), cx = getWidth() / 2f, cy = getHeight() / 2f;
+            float sw = size * 0.085f, r = size / 2f - sw;
+            oval.set(cx - r, cy - r, cx + r, cy + r);
+            ring.setStrokeWidth(sw);
+            ring.setColor(pal.line);
+            c.drawArc(oval, 135, 270, false, ring);
+            if (value10 >= 0) {
+                ring.setColor(color);
+                c.drawArc(oval, 135, Math.max(1f, 270f * Math.min(value10, 1000) / 1000f), false, ring);
+            }
+            // warning tick, across the ring
+            double a = Math.toRadians(135 + 270.0 * warn10 / 1000.0);
+            float ri = r - sw * 0.9f, ro = r + sw * 0.9f;
+            tickP.setColor(pal.amber);
+            tickP.setStrokeWidth(3 * d);
+            c.drawLine(cx + ri * (float) Math.cos(a), cy + ri * (float) Math.sin(a),
+                       cx + ro * (float) Math.cos(a), cy + ro * (float) Math.sin(a), tickP);
+            big.setColor(value10 >= 0 ? pal.text : color);
+            big.setTextSize(size * (text.length() > 5 ? 0.17f : 0.21f));
+            c.drawText(text, cx, cy + size * 0.06f, big);
+            small.setColor(pal.muted);
+            small.setTextSize(size * 0.075f);
+            c.drawText("12V battery", cx, cy + size * 0.2f, small);
+        }
+    }
+
+    /** A small card: a caption, one value, a line under it. */
+    class Tile {
+        final LinearLayout v;
+        final TextView value, sub;
+        Tile(String caption) {
+            v = column();
+            v.setPadding(dp(14), dp(10), dp(14), dp(10));
+            TextView t = new TextView(MainActivity.this);
+            t.setText(caption); t.setTextColor(pal.muted); t.setTextSize(14);
+            t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            v.addView(t);
+            value = new TextView(MainActivity.this);
+            value.setTextSize(26); value.setIncludeFontPadding(false);
+            value.setPadding(0, dp(4), 0, dp(2));
+            v.addView(value);
+            sub = new TextView(MainActivity.this);
+            sub.setTextColor(pal.muted); sub.setTextSize(14);
+            sub.setSingleLine(true); sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            v.addView(sub);
+            set("--", "", pal.text, false);
+        }
+        void set(String val, String line, int color, boolean flag) {
+            value.setText(val); value.setTextColor(color);
+            sub.setText(line);
+            v.setBackgroundDrawable(box(pal.card, flag ? color : pal.line));
+        }
+    }
+
+    /** A row of options, one lit. */
+    class Seg {
+        final LinearLayout row;
+        final TextView[] opts;
+        Seg(String[] labels, final Setter s) {
+            row = row();
+            opts = new TextView[labels.length];
+            for (int i = 0; i < labels.length; i++) {
+                final int k = i;
+                opts[i] = chip(labels[i], new View.OnClickListener() { public void onClick(View v) { s.set(k); } });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                if (i > 0) lp.leftMargin = dp(6);
+                row.addView(opts[i], lp);
+            }
+        }
+        void select(int sel) {
+            for (int j = 0; j < opts.length; j++) styleChip(opts[j], j == sel);
+        }
+    }
+
+    /** − value + ; holding a button keeps stepping. */
+    class Stepper {
+        final LinearLayout row;
+        final TextView value;
+        final int min, max;
+        final String unit;
+        final Setter s;
+        int v;
+        Stepper(int min, int max, int start, String unit, Setter s) {
+            this.min = min; this.max = max; this.unit = unit; this.s = s; v = start;
+            row = row();
+            row.addView(button(-1), new LinearLayout.LayoutParams(dp(76), dp(52)));
+            value = new TextView(MainActivity.this);
+            value.setTextColor(pal.text); value.setTextSize(24);
+            value.setGravity(android.view.Gravity.CENTER);
+            row.addView(value, new LinearLayout.LayoutParams(0, dp(52), 1f));
+            row.addView(button(1), new LinearLayout.LayoutParams(dp(76), dp(52)));
+        }
+        void show(int n) { v = n; value.setText(n + unit); }
+        TextView button(final int dir) {
+            final TextView b = chip(dir < 0 ? "−" : "+", null);
+            b.setTextSize(24);
+            final Runnable repeat = new Runnable() {
+                public void run() { if (step(dir)) handler.postDelayed(this, 90); }
+            };
+            b.setOnTouchListener(new View.OnTouchListener() {
+                public boolean onTouch(View view, android.view.MotionEvent e) {
+                    int a = e.getAction();
+                    if (a == android.view.MotionEvent.ACTION_DOWN) {
+                        b.setPressed(true);
+                        step(dir);
+                        handler.postDelayed(repeat, 450);
+                    } else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL) {
+                        b.setPressed(false);
+                        handler.removeCallbacks(repeat);
+                    }
+                    return true;
+                }
+            });
+            return b;
+        }
+        boolean step(int dir) {
+            int n = v + dir;
+            if (n < min || n > max) return false;
+            s.set(n);
+            return true;
+        }
     }
 
     // ---- chart ----------------------------------------------------------------
@@ -1172,18 +1481,18 @@ public class MainActivity extends Activity {
                 parkBad = new Paint(Paint.ANTI_ALIAS_FLAG), parkUp = new Paint(Paint.ANTI_ALIAS_FLAG),
                 grid = new Paint(), warnP = new Paint(), text = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        Chart(Context c, float density) {
+        Chart(Context c, float density, Pal p) {
             super(c);
             d = density;
-            bar.setColor(ACCENT); bar.setStrokeWidth(4 * d);
-            startDot.setColor(Color.WHITE);
-            endDot.setColor(ACCENT);
-            park.setColor(Color.rgb(110, 118, 128)); park.setStrokeWidth(2 * d);
-            parkBad.setColor(AMBER); parkBad.setStrokeWidth(2 * d);
-            parkUp.setColor(GREEN); parkUp.setStrokeWidth(2 * d);
-            grid.setColor(Color.rgb(50, 55, 62)); grid.setStrokeWidth(d);
-            warnP.setColor(AMBER); warnP.setStrokeWidth(2 * d);
-            text.setColor(MUTED); text.setTextSize(13 * d);
+            bar.setColor(p.accent); bar.setStrokeWidth(4 * d);
+            startDot.setColor(p.text);
+            endDot.setColor(p.accent);
+            park.setColor(p.park); park.setStrokeWidth(2 * d);
+            parkBad.setColor(p.amber); parkBad.setStrokeWidth(2 * d);
+            parkUp.setColor(p.green); parkUp.setStrokeWidth(2 * d);
+            grid.setColor(p.grid); grid.setStrokeWidth(d);
+            warnP.setColor(p.amber); warnP.setStrokeWidth(2 * d);
+            text.setColor(p.muted); text.setTextSize(13 * d);
         }
 
         void setData(List<long[]> dr, int w, int drop) { drives = dr; warn10 = w; drop10 = drop; invalidate(); }
@@ -1265,36 +1574,105 @@ public class MainActivity extends Activity {
     int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
     void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); }
 
-    SeekBar seek(final int min, int max, int val, final Setter s) {
-        SeekBar sb = new SeekBar(this);
-        sb.setMax(max - min);
-        sb.setProgress(val - min);
-        sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar b, int p, boolean u) { s.set(p + min); }
-            public void onStartTrackingTouch(SeekBar b) {}
-            public void onStopTrackingTouch(SeekBar b) {}
-        });
-        return sb;
-    }
-    Button button(String s, View.OnClickListener l) {
-        Button b = new Button(this); b.setText(s); b.setTextSize(17); b.setMinHeight(dp(56)); b.setOnClickListener(l); return b;
-    }
     LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
-    View spacer() { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(1, 0, 1f)); return v; }
-    TextView label() { TextView t = new TextView(this); t.setTextColor(Color.WHITE); t.setTextSize(17); t.setPadding(0, dp(10), 0, 0); return t; }
-    TextView title(String s) {
-        TextView t = new TextView(this);
-        t.setText(s); t.setTextColor(Color.WHITE); t.setTextSize(26);
-        t.setPadding(0, 0, 0, dp(8)); return t;
-    }
-    TextView section(String s) {
-        TextView t = new TextView(this);
-        t.setText(s); t.setTextColor(ACCENT); t.setTextSize(17);
-        t.setPadding(0, dp(14), 0, dp(4)); return t;
+    LinearLayout row() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        return l;
     }
     TextView hint(String s) {
         TextView t = new TextView(this);
-        t.setText(s); t.setTextColor(MUTED); t.setTextSize(15);
-        t.setPadding(0, 0, 0, dp(8)); return t;
+        t.setText(s); t.setTextColor(pal.muted); t.setTextSize(15);
+        t.setPadding(0, dp(4), 0, dp(6)); return t;
+    }
+    TextView caption(String s) {
+        TextView t = new TextView(this);
+        t.setText(s); t.setTextColor(pal.text); t.setTextSize(16);
+        t.setPadding(0, dp(14), 0, dp(6)); return t;
+    }
+
+    /** a settings card with its heading */
+    LinearLayout card(String heading) {
+        LinearLayout c = column();
+        c.setPadding(dp(16), dp(12), dp(16), dp(16));
+        c.setBackgroundDrawable(box(pal.card, pal.line));
+        TextView h = new TextView(this);
+        h.setText(heading); h.setTextColor(pal.accent); h.setTextSize(18);
+        c.addView(h);
+        return c;
+    }
+
+    /** a card in its own scroll view, in case a long setting ever overflows the 720 px height */
+    ScrollView scroll(View v) {
+        ScrollView s = new ScrollView(this);
+        s.setFillViewport(false);
+        s.addView(v);
+        s.setPadding(0, 0, 0, dp(40));   // keep the last item clear of the screen's rounded corner
+        s.setClipToPadding(false);
+        return s;
+    }
+
+    /** a tappable label (the app draws its own buttons so day and night look alike) */
+    TextView chip(String s, View.OnClickListener l) {
+        TextView t = new TextView(this);
+        t.setText(s); t.setTextSize(17);
+        t.setGravity(android.view.Gravity.CENTER);
+        t.setMinHeight(dp(52));
+        t.setPadding(dp(10), 0, dp(10), 0);
+        t.setClickable(true);
+        if (l != null) t.setOnClickListener(l);
+        styleChip(t, false);
+        return t;
+    }
+
+    void styleChip(TextView t, boolean on) {
+        android.graphics.drawable.StateListDrawable sl = new android.graphics.drawable.StateListDrawable();
+        sl.addState(new int[] { android.R.attr.state_pressed }, box(mix(pal.accent, pal.card, 0.35f), pal.accent));
+        sl.addState(new int[0], on ? box(pal.accent, pal.accent) : box(pal.card, pal.line));
+        t.setBackgroundDrawable(sl);
+        t.setTextColor(on ? pal.onAccent : pal.text);
+    }
+
+    /** a full-width action in a settings card */
+    TextView tool(String s, View.OnClickListener l) {
+        TextView t = chip(s, l);
+        t.setLayoutParams(margins(LinearLayout.LayoutParams.MATCH_PARENT, 0, dp(10), 0, 0));
+        return t;
+    }
+
+    GradientDrawable box(int fill, int stroke) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(12));
+        d.setStroke(Math.max(1, dp(1)), stroke);
+        return d;
+    }
+
+    /** a over b, a's share = f */
+    static int mix(int a, int b, float f) {
+        return Color.rgb(Math.round(Color.red(a) * f + Color.red(b) * (1 - f)),
+                Math.round(Color.green(a) * f + Color.green(b) * (1 - f)),
+                Math.round(Color.blue(a) * f + Color.blue(b) * (1 - f)));
+    }
+
+    LinearLayout.LayoutParams margins(int width, int l, int t, int r, int b) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.setMargins(l, t, r, b); return p;
+    }
+    /** takes the rest of a vertical parent */
+    LinearLayout.LayoutParams vfill(int l, int t, int r, int b) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        p.setMargins(l, t, r, b); return p;
+    }
+    /** an equal share of a horizontal parent */
+    LinearLayout.LayoutParams hfill(int l, int t, int r, int b) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+        p.setMargins(l, t, r, b); return p;
+    }
+    LinearLayout.LayoutParams tileLp(boolean gap) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        if (gap) p.leftMargin = dp(10);
+        return p;
     }
 }
