@@ -157,7 +157,9 @@ public class MainActivity extends Activity {
         dialCard.setBackgroundDrawable(box(pal.card, pal.line));
         dial = new Dial(this, dp(1));
         dial.pal = pal;
-        dialCard.addView(dial, new LinearLayout.LayoutParams(dp(230), dp(230)));
+        // the dial takes whatever height the text under it leaves (the car's status
+        // bar and screen density leave less than 720 px), so that text always shows
+        dialCard.addView(dial, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         pill = new TextView(this);
         pill.setTextSize(16);
         pill.setPadding(dp(16), dp(4), dp(16), dp(4));
