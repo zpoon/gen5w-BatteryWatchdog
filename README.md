@@ -140,9 +140,10 @@ capacity measurement, and it never triggers warnings.
 
 ### Battery report and warning history
 
-**Settings → Tools → Battery report** puts together everything logged, for a
-dealer or service visit, and **Save to USB** writes it as a plain text file
-(`BatteryWatchdog-report-<date>.txt`) you can print or show on a phone. It has:
+**Settings → Tools → Battery report** puts everything logged into one readable
+summary, so you can see how your 12V is doing over time. **Save to USB** writes
+it as a plain text file (`BatteryWatchdog-report-<date>.txt`) that opens on any
+computer or phone. It has:
 
 - the latest 12V reading and HV battery health;
 - how many warnings there were and how many drives started below your

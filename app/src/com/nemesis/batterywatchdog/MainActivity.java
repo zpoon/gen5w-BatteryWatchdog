@@ -1148,7 +1148,7 @@ public class MainActivity extends Activity {
                 String err = writeRoot(usb + "/" + name, text.replace("\n", "\r\n"));   // CRLF: opens cleanly in any editor
                 runRoot("sync");
                 msg = err.length() > 0 ? "Couldn't write " + name + " to " + usb + ":\n" + err
-                    : "Wrote " + name + " to " + usb + ".\n\nIt's a plain text file: print it or show it on a phone at a service visit.";
+                    : "Wrote " + name + " to " + usb + ".\n\nIt's a plain text file that opens on any computer or phone.";
             }
             handler.post(new Runnable() { public void run() {
                 new AlertDialog.Builder(MainActivity.this).setTitle("Battery report").setMessage(msg)

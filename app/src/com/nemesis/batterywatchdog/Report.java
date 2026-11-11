@@ -11,8 +11,8 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 /**
- * The 12V battery report: a plain-text summary of everything logged, written
- * for a dealer or service visit. Plain Java (no Android classes) so it can be
+ * The 12V battery report: a plain-text summary of everything logged, for the
+ * owner to keep an eye on the trend. Plain Java (no Android classes) so it can be
  * tested off the car (tests/test_report.sh).
  *
  * Drives are {start_epoch, end_epoch, start_pct10, end_pct10}, oldest first,
