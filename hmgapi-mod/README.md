@@ -9,6 +9,24 @@ With HMG-API, the mod reads the car through named readings
 `outside_temp`), mapped per car by HMG-API. It needs no transaction numbers, no
 firmware list, no temperature hunting and no root plumbing.
 
+## One or the other
+
+The mod and the NEMESIS package use the same app (`com.nemesis.batterywatchdog`,
+same signing key), so a head unit runs only one of them:
+
+- The package's install check (`package/scripts/pre.sh`) refuses while the mod
+  is installed and turned on (`/data/hmgapi/mods/battery-watchdog/mod.json`
+  without `.disabled`), and says why. With HMG-API present but no mod, it
+  installs and recommends the mod.
+- The package's monitor checks the same thing on every loop: while the mod is
+  on, it makes no calls, logs nothing and reports `state=other_install`, which
+  the app shows as "Idle" with what to do. If the mod is removed or turned off,
+  it monitors again. The mod's copy of the script never checks.
+- Nothing stops HMG-API installing the mod over the package, so the package
+  side carries the whole guard. Removing either one uninstalls the shared app,
+  so owners switching should uninstall the one they have first.
+- Tests G1-G3 in `tests/test_service.sh`.
+
 ## Files
 
 - `mod.json`: the mod's declaration. It started from HMG-API's

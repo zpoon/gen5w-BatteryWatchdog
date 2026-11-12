@@ -36,6 +36,15 @@ TX_SOC=""; TX_SOH=""; TX_HVSOC=""
 mkdir -p "$STATE" 2>/dev/null
 LOG=$STATE/log.csv
 
+# The NEMESIS package and the HMG-API mod share the app, so only one may run.
+# The native copy steps aside while the mod is installed and turned on, and
+# picks up again if the mod is removed or turned off (its own install refuses
+# while the mod is on: scripts/pre.sh).
+MOD_ID=battery-watchdog
+HM_MODS=${BWD_HMGAPI_MODS:-/data/hmgapi/mods}
+mod_active() { [ -z "$HMGAPI" ] && [ -f "$HM_MODS/$MOD_ID/mod.json" ] && [ ! -f "$HM_MODS/$MOD_ID/.disabled" ]; }
+IDLE=0
+
 log() { echo "watchdog: $(date 2>/dev/null) $*"; }
 
 cfg() { _f="$STATE/$1"; _d="$2"; if [ -r "$_f" ]; then read -r _v < "$_f" 2>/dev/null; case "$_v" in ''|*[!0-9-]*) echo "$_d";; *) echo "$_v";; esac; else echo "$_d"; fi; }
@@ -522,6 +531,15 @@ LOOPS=0
 
 while :; do
     load_cfg
+    if mod_active; then
+        [ "$IDLE" = 1 ] || log "the HMG-API mod $MOD_ID is installed and on: this copy stays idle"
+        IDLE=1; WARN_TEXT=""; write_status other_install
+        LOOPS=$((LOOPS + 1))
+        [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
+        if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        DISP=$(display_state); LAST_TICK=$(now); NEED_SESSION=mod_off; continue
+    fi
+    [ "$IDLE" = 1 ] && { log "the HMG-API mod is gone or off: monitoring again"; IDLE=0; }
     if [ "$ENABLED" != "1" ]; then
         DISP=$(display_state); write_status disabled
         sleep 60; LAST_TICK=$(now); continue

@@ -95,6 +95,14 @@ install the new USB bundle over the top and confirm the update. NEMESIS 1.15
 and older can't update a package in place, so [uninstall](#uninstall) first,
 then install the new version. Settings and history are kept either way.
 
+**With HMG-API:** Battery Watchdog also comes as an HMG-API mod, which reads
+the car through HMG-API instead of the firmware-specific numbers. Install one
+or the other, not both: they share the app. The NEMESIS package won't install
+while the mod is installed and turned on, and if the mod is added later, the
+package's monitor stays idle and the app says so. To switch, uninstall the one
+you have first. History doesn't move between them: export it first if you
+want to keep it.
+
 ## Using it
 
 The home screen shows, from left to right:

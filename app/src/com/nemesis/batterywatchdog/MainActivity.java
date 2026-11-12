@@ -422,6 +422,17 @@ public class MainActivity extends Activity {
         dial.warn10 = warnPct * 10;
         List<long[]> drives = loadDrives(status);
         legend.setText(legendText());
+        if (!hm() && "other_install".equals(state)) {
+            // the HMG-API mod is installed and on: this NEMESIS copy steps aside (svc/watchdog.sh)
+            dial.show(-1, "Idle", pal.muted);
+            setPill("Idle", pal.muted);
+            updLabel.setText("The HMG-API mod is monitoring.");
+            ctxLabel.setText("");
+            setBanner("Battery Watchdog is also installed as an HMG-API mod, so this NEMESIS copy is idle. "
+                + "Keep one: uninstall this package in NEMESIS Manager, or remove the mod in HMG-API.");
+            chart.setData(lastN(drives, 30), warnPct * 10, dropPct * 10);
+            return;
+        }
         if (paused && !verified()) {
             dial.show(-1, "Paused", pal.amber);
             setPill("Paused", pal.amber);

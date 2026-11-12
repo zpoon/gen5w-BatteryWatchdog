@@ -257,4 +257,32 @@ hm_run "$T" 3
 grep -q ',start,83,830,96,705,12,1,0,0,2,0$' "$T/state/log.csv" || fail "HA5: flags and saver should fill columns 8-11"
 rm -rf "$T"; echo "  HA5 sensor flags from HMG-API: ok"
 
+# G1: the HMG-API mod is installed and on -> the native copy stays idle (no
+# calls, no log rows); turned off -> it monitors again
+T=$(mktemp -d); setup "$T"; mkdir -p "$T/mods/battery-watchdog"; echo '{}' > "$T/mods/battery-watchdog/mod.json"
+export BWD_HMGAPI_MODS="$T/mods"; run "$T" 3
+grep -q '^state=other_install' "$T/state/status" || fail "G1: should be idle while the mod is on"
+grep -q '^[0-9]*,start,' "$T/state/log.csv" 2>/dev/null && fail "G1: logged a drive while the mod is on"
+grep -q 'stays idle' "$T/out" || fail "G1: should say why it's idle"
+: > "$T/mods/battery-watchdog/.disabled"
+run "$T" 4; unset BWD_HMGAPI_MODS
+grep -q '^state=ok' "$T/state/status" || fail "G1: should monitor while the mod is turned off"
+rm -rf "$T"; echo "  G1 idle while the HMG-API mod is on: ok"
+
+# G2: the package's install check refuses only while the mod is installed and on
+T=$(mktemp -d); mkdir -p "$T/mods/battery-watchdog"
+BWD_HMGAPI_MODS="$T/mods" "$SH" "$ROOT/package/scripts/pre.sh" > "$T/o" 2>&1 || fail "G2: no mod should install"
+echo '{}' > "$T/mods/battery-watchdog/mod.json"
+BWD_HMGAPI_MODS="$T/mods" "$SH" "$ROOT/package/scripts/pre.sh" > "$T/o" 2>&1 && fail "G2: should refuse while the mod is on"
+grep -q 'already installed as an HMG-API mod' "$T/o" || fail "G2: should say why"
+: > "$T/mods/battery-watchdog/.disabled"
+BWD_HMGAPI_MODS="$T/mods" "$SH" "$ROOT/package/scripts/pre.sh" > "$T/o" 2>&1 || fail "G2: a turned-off mod shouldn't block"
+rm -rf "$T"; echo "  G2 install check: ok"
+
+# G3: the mod itself never idles for its own folder
+T=$(mktemp -d); hm_setup "$T"; mkdir -p "$T/mods/battery-watchdog"; echo '{}' > "$T/mods/battery-watchdog/mod.json"
+export BWD_HMGAPI_MODS="$T/mods"; hm_run "$T" 3; unset BWD_HMGAPI_MODS
+grep -q '^state=ok' "$T/state/status" || fail "G3: the mod should monitor"
+rm -rf "$T"; echo "  G3 the mod ignores the check: ok"
+
 echo "PASS ($SH)"

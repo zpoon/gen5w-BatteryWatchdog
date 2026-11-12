@@ -9,6 +9,7 @@ detailed-desc=Logs the 12V battery charge while the car is on, shows drives and 
 os=*.260507,*.260903
 models=any
 repository=https://github.com/zpoon/gen5w-BatteryWatchdog
+preinstall=scripts/pre.sh
 postinstall=scripts/post.sh
 
 [app.0]
