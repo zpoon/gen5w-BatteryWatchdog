@@ -34,7 +34,19 @@ jobs:
           "$SDKM" "build-tools;30.0.3" "platforms;android-30" > /dev/null
 
       - name: Install mksh (the head unit's shell)
-        run: sudo apt-get install -y -qq mksh > /dev/null
+        run: |
+          # Ubuntu's mirror is sometimes unreachable from the runners; fall back
+          # to Debian's current build of the same package
+          if ! timeout 150 sh -c 'sudo apt-get update -qq && sudo apt-get install -y -qq mksh' > /dev/null 2>&1; then
+            echo "::warning title=mksh::apt failed, using Debian's .deb"
+            BASE=https://deb.debian.org/debian/pool/main/m/mksh/
+            DEB=$(curl -fsSL "$BASE" | grep -oE 'mksh_[0-9][^"]*_amd64\.deb' | sort -uV | tail -n 1)
+            [ -n "$DEB" ] || { echo "::error title=mksh::no .deb found at $BASE"; exit 1; }
+            curl -fsSL -o /tmp/mksh.deb "$BASE$DEB"
+            dpkg-deb -x /tmp/mksh.deb /tmp/mksh-cur
+            sudo ln -sf "$(ls /tmp/mksh-cur/bin/mksh /tmp/mksh-cur/usr/bin/mksh 2>/dev/null | head -n 1)" /usr/local/bin/mksh
+          fi
+          mksh -c 'echo "$KSH_VERSION"'
 
       - name: Check shell scripts parse (sh and mksh)
         run: |
@@ -82,6 +94,9 @@ jobs:
 
       - name: Test the app's dates-hidden share zip against the analysis
         run: python3 tests/test_sharezip.py
+
+      - name: Test the battery report
+        run: tests/test_report.sh
 
       - name: Build NEMESIS package + USB bundle
         run: |

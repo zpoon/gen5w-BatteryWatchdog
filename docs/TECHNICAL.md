@@ -85,7 +85,7 @@ requests). So the numbers are never used blindly:
    (`-` for a missing one). Both the service and the app read this one file
    from the installed package. Currently
    `eng.vmadmin.20260507.094910  137  74  214` (2023 Ioniq 5 SEL US, 260507).
-3. **Manual override (app).** Advanced → "use built-in numbers…", with a
+3. **Manual override (app).** Settings → Tools → "use built-in numbers…", with a
    warning; saved to `txn` as `source=manual-override` for this firmware only.
 
 The service uses `txn` only if its `fw` matches the running firmware, and
@@ -178,7 +178,7 @@ State and settings: `/data/nemesis/state/battery.watchdog/`
 
 | file | contents |
 |---|---|
-| `log.csv` | `epoch,event,raw_hex,pct10,soh_raw,hv10,temp_c,sns_state,sns_invalid,sns_error,aux_opt,chg_status` (`event` = `start`/`sample`). The last five are raw (see "Extra getters"), empty when not looked up. Older lines have only the first seven. Rotates to `log.old.csv` at `max_lines` (4000). **Advanced → Export to USB** converts it to `readings.csv` and `drives.csv` |
+| `log.csv` | `epoch,event,raw_hex,pct10,soh_raw,hv10,temp_c,sns_state,sns_invalid,sns_error,aux_opt,chg_status` (`event` = `start`/`sample`). The last five are raw (see "Extra getters"), empty when not looked up. Older lines have only the first seven. Rotates to `log.old.csv` at `max_lines` (4000). **Settings → Tools → Export to USB** converts it to `readings.csv` and `drives.csv` |
 | `sessions` | one line per finished drive: `start_epoch minutes start_pct10 end_pct10` |
 | `warnings` | every warning raised, timestamped |
 | `status` | latest state, read by the app |
@@ -233,7 +233,7 @@ If NEMESIS's log shows `giving up on battery.watchdog/<service>`, it stopped
 launching that service after it crashed repeatedly. On the reference car this
 persisted across package updates **and** a head-unit reboot, and
 `nemesis service start` didn't clear it. Renaming the service (`monitor` →
-`watch` in v0.2.6) gave it a clean slate. **Advanced → Test run** runs the
+`watch` in v0.2.6) gave it a clean slate. **Settings → Tools → Test run** runs the
 script directly, outside NEMESIS, to tell a script problem from a NEMESIS one.
 
 ## Testing
