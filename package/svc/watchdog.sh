@@ -49,6 +49,26 @@ log() { echo "watchdog: $(date 2>/dev/null) $*"; }
 
 cfg() { _f="$STATE/$1"; _d="$2"; if [ -r "$_f" ]; then read -r _v < "$_f" 2>/dev/null; case "$_v" in ''|*[!0-9-]*) echo "$_d";; *) echo "$_v";; esac; else echo "$_d"; fi; }
 
+# Under HMG-API the state folder is the service's own (HMG-API hands it to the
+# app's user at every start), but files left inside by another user, e.g. from
+# an install when the app had a different user id, can't be written: "can't
+# create .../status: Permission denied" and the app never sees a reading. The
+# folder is ours, so such files can be replaced: copied when readable, else
+# removed.
+take_over_state() {
+    for _f in "$STATE"/*; do
+        [ -f "$_f" ] || continue
+        [ -w "$_f" ] && continue
+        if [ -r "$_f" ] && cat "$_f" > "$_f.new" 2>/dev/null && mv -f "$_f.new" "$_f" 2>/dev/null; then
+            log "took over ${_f##*/} (it belonged to another user)"
+        else
+            rm -f "$_f.new" 2>/dev/null
+            if rm -f "$_f" 2>/dev/null; then log "removed ${_f##*/}: another user's file this service can't read"
+            else log "can't write or replace ${_f##*/} in $STATE"; fi
+        fi
+    done
+}
+
 toast() {
     # one line each (no backslash continuations): HMG-API's install-time script check reads line by line
     am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || true
@@ -509,7 +529,7 @@ log "v$VERSION start; enabled=$ENABLED interval=${INTERVAL}s poll=${POLL}s gap=$
 
 # wait (bounded) for the telematics service
 i=0
-[ -n "$HMGAPI" ] && i=120 && log "HMG-API mod $HMGAPI_MOD; state in $STATE"
+[ -n "$HMGAPI" ] && i=120 && log "HMG-API mod $HMGAPI_MOD; state in $STATE" && take_over_state
 while [ "$i" -lt 120 ]; do
     service check "$SVC" 2>/dev/null | grep -q found && break
     sleep 2; i=$((i + 2))
