@@ -1100,8 +1100,19 @@ public class MainActivity extends Activity {
     static final String NO_USB = "No USB drive found. Insert a FAT32 or exFAT drive and try again.";
 
     String noUsb() {
-        return hm() ? "No USB drive this app can write to. Insert a FAT32 or exFAT drive with a folder named "
-            + "BatteryWatchdog at the top and try again." : NO_USB;
+        if (!hm()) return NO_USB;
+        // HMG-API lets a mod use only a folder it named (mod.json "usb") that already
+        // exists on the stick; it doesn't make the folder, and this app can't
+        boolean stick = runRoot("cat /proc/mounts 2>/dev/null").matches("(?s).*(/storage/usb|/mnt/media_rw/usb)\\d.*");
+        String folders = hmgapid("usb").trim();
+        if (folders.startsWith("/"))
+            return "HMG-API found the BatteryWatchdog folder (" + folders.split("\n")[0].trim() + "), but Android "
+                + "doesn't let this app write to it. This needs a change in HMG-API; nothing on the drive was changed.";
+        if (stick)
+            return "The USB drive has no BatteryWatchdog folder. Under HMG-API this app can only use that folder: "
+                + "on a computer, make a folder named BatteryWatchdog at the top of the drive, then insert it again.";
+        return "No USB drive found. Insert a FAT32 or exFAT drive with a folder named BatteryWatchdog at the top, "
+            + "then try again.";
     }
 
     /** state files read through root (the app can't read the state dir itself) */
