@@ -34,7 +34,7 @@ case "\$3" in
 *)   echo "Result: Parcel(00000000 00000000   '........')";;
 esac
 EOT
-    printf '#!/bin/sh\necho "$*" >> %s/am\ncase "$3" in *PANEL_REFRESH) exit 0;; esac\necho "$6" >> %s/toasts\n' "$T" "$T" > "$T/bin/am"
+    printf '#!/bin/sh\necho "$*" >> %s/am\n[ "$2 $3" = "--user 0" ] || { echo "Error: no --user 0 (a broadcast to all users is refused)" >> %s/am_bad; exit 1; }\ncase "$5" in *PANEL_REFRESH) exit 0;; esac\necho "$8" >> %s/toasts\n' "$T" "$T" "$T" > "$T/bin/am"
     printf '#!/bin/sh\ncase "$1" in power) cat %s/disp;; com.hkmc.micom.datc) cat %s/datc 2>/dev/null;; esac\n' "$T" "$T" > "$T/bin/dumpsys"
     printf '#!/bin/sh\ncat %s/fw\n' "$T" > "$T/bin/getprop"
     printf '#!/bin/sh\ncat %s/logcat 2>/dev/null\n' "$T" > "$T/bin/logcat"
@@ -335,6 +335,17 @@ t_G3() {
     rm -rf "$T"; echo "  G3 the mod ignores the check: ok"
 }
 
+# HA7: a refused broadcast (pop-up or panel refresh) is logged, once per kind
+t_HA7() {
+    T=$(mktemp -d); hm_setup "$T"; echo 1 > "$T/state/toast_start"
+    printf '#!/bin/sh\necho "java.lang.SecurityException: Permission Denial: not allowed"\n' > "$T/bin/am"; chmod +x "$T/bin/am"
+    hm_run "$T" 4
+    [ "$(grep -c 'toast broadcast refused: java.lang.SecurityException' "$T/out")" -eq 1 ] || fail "HA7: the refused pop-up should be logged once"
+    [ "$(grep -c 'panel broadcast refused' "$T/out")" -eq 1 ] || fail "HA7: the refused panel refresh should be logged once"
+    grep -q '^state=ok' "$T/state/status" || fail "HA7: monitoring goes on"
+    rm -rf "$T"; echo "  HA7 refused broadcasts logged: ok"
+}
+
 # HA6: settings from HMG-API's page land in the monitor's files, clamped; only changes are written
 t_HA6() {
     T=$(mktemp -d); hm_setup "$T"
@@ -358,12 +369,12 @@ t_HA6() {
 # spent in sleeps standing in for the car's screen going off and on. Output is
 # kept per case and printed in order.
 OUT=$(mktemp -d)
-for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6; do
+for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7; do
     ( "t_$c" ) > "$OUT/$c" 2>&1 &
     echo $! > "$OUT/$c.pid"
 done
 FAILED=""
-for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6; do
+for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7; do
     wait "$(cat "$OUT/$c.pid")" || FAILED="$FAILED $c"
     cat "$OUT/$c"
 done

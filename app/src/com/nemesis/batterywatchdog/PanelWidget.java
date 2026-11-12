@@ -63,6 +63,10 @@ public class PanelWidget extends AppWidgetProvider {
         String big, ctx = "", park = "", warn = MainActivity.kv(status, "warn"), upd = "";
         int bigColour = Color.WHITE, parkColour = Color.WHITE;
         if (state.length() == 0) { big = "--"; upd = "No reading yet"; }
+        else if ("waiting".equals(state)) {
+            // just installed, updated or restarted: HMG-API's readings take a minute
+            big = "\u2026"; bigColour = MUTED; upd = "Starting: waiting for the first reading";
+        }
         else if ("unverified".equals(state)) {
             big = "Paused"; bigColour = AMBER;
             upd = MainActivity.hm() ? "HMG-API has no 12V reading for this car yet" : "Firmware not verified";

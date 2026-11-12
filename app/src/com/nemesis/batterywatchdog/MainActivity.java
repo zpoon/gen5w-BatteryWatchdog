@@ -418,6 +418,9 @@ public class MainActivity extends Activity {
 
     // ---- data ---------------------------------------------------------------
     void refreshData() {
+        // the split-screen panel page (HMG-API) redraws too, so it never lags the app
+        // when both are on screen, whatever happens to the monitor's own refresh
+        if (hm()) PanelWidget.refresh(this);
         String status = runRoot("cat " + STATE + "/status 2>/dev/null");
         String state = kv(status, "state"), pct = kv(status, "pct10"), soh = kv(status, "soh_raw");
         String upd = kv(status, "updated"), warn = kv(status, "warn");

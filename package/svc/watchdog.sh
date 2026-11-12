@@ -69,15 +69,29 @@ take_over_state() {
     done
 }
 
+# Broadcasts go to user 0: without --user, am sends to all users, which Android
+# refuses from an ordinary app ("requires INTERACT_ACROSS_USERS_FULL"). Under
+# NEMESIS the monitor is root and that passed; under HMG-API it's the app's user,
+# so the pop-ups and the panel refresh were refused without a word. Now the
+# first refusal of each kind is logged.
+AM_ERR_LOGGED=""
+bcast() {   # what args...
+    _w=$1; shift
+    _o=$(am broadcast --user 0 "$@" 2>&1)
+    case "$_o" in *Exception*|*rror*|*enial*)
+        case " $AM_ERR_LOGGED " in *" $_w "*) ;; *) AM_ERR_LOGGED="$AM_ERR_LOGGED $_w"; log "$_w broadcast refused: ${_o%%"$NL"*}";; esac;;
+    esac
+    return 0
+}
 toast() {
     # one line each (no backslash continuations): HMG-API's install-time script check reads line by line
-    am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || true
+    bcast toast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true
 }
 
 # HMG-API: the split-screen panel page (PanelWidget) redraws from the status file
 panel_refresh() {
     [ -n "$HMGAPI" ] || return 0
-    am broadcast -a com.nemesis.batterywatchdog.PANEL_REFRESH -n com.nemesis.batterywatchdog/.PanelWidget >/dev/null 2>&1 || true
+    bcast panel -a com.nemesis.batterywatchdog.PANEL_REFRESH -n com.nemesis.batterywatchdog/.PanelWidget
 }
 
 # wall-clock seconds (keeps counting through suspend). If this date can't do
