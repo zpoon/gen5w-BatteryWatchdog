@@ -1,0 +1,59 @@
+battery-watchdog as an HMG-API mod (draft)
+
+mod.json:
+{
+  "id": "battery-watchdog",
+  "name": "Battery Watchdog",
+  "version": "1.1.0",
+  "hmgapi": ">=1.0.0",
+  "description": "",
+  "live": true,
+  "apps": [
+    {
+      "apk": "app/batterywatchdog.apk",
+      "package": "com.nemesis.batterywatchdog"
+    }
+  ],
+  "services": [
+    {
+      "name": "watch",
+      "script": "svc/watchdog.sh",
+      "user": "root",
+      "start": "boot",
+      "restart": true
+    }
+  ],
+  "provides": {
+    "launcher": [
+      {
+        "package": "com.nemesis.batterywatchdog",
+        "class": "com.nemesis.batterywatchdog.MainActivity",
+        "title": "Battery Watchdog"
+      }
+    ]
+  }
+}
+
+Notes (12):
+  - id: NEMESIS id "battery.watchdog" becomes "battery-watchdog" (HMG-API ids: a-z 0-9 -)
+  - postinstall=scripts/post.sh: HMG-API mods have no install scripts. What they do usually maps to: patches.json (files, settings, props; undone on removal), "apps", "services", or an install check (planned). Read it and move each step.
+  - scripts/post.sh:2: export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
+      -> in a mod, services get the stock PATH; /system changes go in patches.json
+  - scripts/post.sh:3: STATE=/data/nemesis/state/battery.watchdog
+      -> state and logs: $HMGAPI_DATA is the service's own folder; its output already goes to /data/hmgapi/logs/<id>/<name>.log
+  - scripts/post.sh:16: : > /data/nemesis/logs/battery.watchdog/watch.log 2>/dev/null
+      -> state and logs: $HMGAPI_DATA is the service's own folder; its output already goes to /data/hmgapi/logs/<id>/<name>.log
+  - scripts/post.sh:17: /system/xbin/nemesis service stop battery.watchdog/watch >/dev/null 2>&1
+      -> hmgapid services / service-log / service-restart (or the client library)
+  - scripts/post.sh:18: /system/xbin/nemesis service start battery.watchdog/watch >/dev/null 2>&1 ) &
+      -> hmgapid services / service-log / service-restart (or the client library)
+  - svc/watchdog.sh:17: export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:$PATH
+      -> in a mod, services get the stock PATH; /system changes go in patches.json
+  - svc/watchdog.sh:23: STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
+      -> state and logs: $HMGAPI_DATA is the service's own folder; its output already goes to /data/hmgapi/logs/<id>/<name>.log
+  - svc/watchdog.sh:24: SVC=tm_hscan_service
+      -> a car reading: mod.json "vehicle": {"read": [...]} and `hmgapid vehicle <name>` (speed, gear.park, steering.angle, hv.soc, battery12v.soc, ...: docs/mod-reference.md); if it's a command, see docs/vehicle-commands.md
+  - svc/watchdog.sh:35: am broadcast -a com.hkmc.intent.action.TOAST \
+      -> fine as is; the client library also has HmgApi.toast(context, text)
+  - svc/watchdog.sh:358: [ -r "$KNOWN_FILE" ] || KNOWN_FILE=/data/nemesis/apps/battery.watchdog/known_firmware.txt
+      -> the package folder: in a mod, $HMGAPI_MOD_DIR (/data/hmgapi/mods/<id>), or the script's own folder (${0%/*})

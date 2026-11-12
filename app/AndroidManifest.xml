@@ -19,5 +19,13 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- page in the right-hand split-screen panel (HMG-API: hmgapi-mod/mod.json provides.panel) -->
+    <receiver android:name=".PanelWidget" android:label="12V battery" android:exported="true">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        <action android:name="com.nemesis.batterywatchdog.PANEL_REFRESH" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/panel_widget" />
+    </receiver>
   </application>
 </manifest>

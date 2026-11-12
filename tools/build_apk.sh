@@ -27,10 +27,13 @@ KS="$APP/debug.jks"
 [ -x "$BT/dx" ] || { echo "no dx in $BT (use a build-tools that still ships dx, e.g. 30.0.3)"; exit 1; }
 [ -f "$AJ" ] || { echo "no android.jar at $AJ"; exit 1; }
 
-rm -rf "$OUT"; mkdir -p "$OUT/classes"
+rm -rf "$OUT"; mkdir -p "$OUT/classes" "$OUT/gen"
+
+echo "== R.java (layouts and the panel widget) =="
+"$BT/aapt" package -f -m -J "$OUT/gen" -M "$APP/AndroidManifest.xml" -S "$APP/res" -I "$AJ"
 
 echo "== javac =="
-javac --release 8 -classpath "$AJ" -d "$OUT/classes" $(find "$APP/src" -name '*.java')
+javac --release 8 -classpath "$AJ" -d "$OUT/classes" $(find "$APP/src" "$OUT/gen" -name '*.java')
 
 echo "== dex (dx, min-sdk 19) =="
 "$BT/dx" --dex --min-sdk-version=19 --output="$OUT/classes.dex" "$OUT/classes"

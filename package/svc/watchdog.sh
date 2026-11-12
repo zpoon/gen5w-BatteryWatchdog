@@ -14,27 +14,70 @@
 #
 # stdout is captured by NEMESIS:  nemesis log service battery.watchdog/watch
 # Config: one-value files in $STATE (written by the app / post.sh).
+#
+# Under HMG-API (the mod in hmgapi-mod/: $HMGAPI_MOD set, hmgapid present) the
+# same script reads the car through HMG-API's named readings instead
+# (`hmgapid vehicle battery12v.soc hv.soc ...`): no transaction numbers, no
+# firmware list, no temperature hunting, and "car on" (hv.ready) marks drives.
+# State lives in $HMGAPI_DATA; output goes to HMG-API's service log.
 export PATH=/data/nemesis/bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:$PATH
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
 [ -n "$BWD_TEST_PATH" ] && PATH=$BWD_TEST_PATH:$PATH   # desktop tests only (mock service/am/dumpsys)
 
 VERSION=0.5.0   # stamped at build time by tools/make_package.sh (see VERSION)
 TAG=battery.watchdog
-STATE=${BWD_STATE:-/data/nemesis/state/$TAG}
+HMGAPI=""
+[ -n "$HMGAPI_MOD" ] && command -v hmgapid >/dev/null 2>&1 && HMGAPI=1
+if [ -n "$HMGAPI" ]; then STATE=${BWD_STATE:-${HMGAPI_DATA:-/data/hmgapi/data/$HMGAPI_MOD}}
+else STATE=${BWD_STATE:-/data/nemesis/state/$TAG}; fi
 SVC=tm_hscan_service
 # Transaction numbers are NOT hard-wired: see verify() below.
 TX_SOC=""; TX_SOH=""; TX_HVSOC=""
 mkdir -p "$STATE" 2>/dev/null
 LOG=$STATE/log.csv
 
+# The NEMESIS package and the HMG-API mod share the app, so only one may run.
+# The native copy steps aside while the mod is installed and turned on, and
+# picks up again if the mod is removed or turned off (its own install refuses
+# while the mod is on: scripts/pre.sh).
+MOD_ID=battery-watchdog
+HM_MODS=${BWD_HMGAPI_MODS:-/data/hmgapi/mods}
+mod_active() { [ -z "$HMGAPI" ] && [ -f "$HM_MODS/$MOD_ID/mod.json" ] && [ ! -f "$HM_MODS/$MOD_ID/.disabled" ]; }
+IDLE=0
+
 log() { echo "watchdog: $(date 2>/dev/null) $*"; }
 
 cfg() { _f="$STATE/$1"; _d="$2"; if [ -r "$_f" ]; then read -r _v < "$_f" 2>/dev/null; case "$_v" in ''|*[!0-9-]*) echo "$_d";; *) echo "$_v";; esac; else echo "$_d"; fi; }
 
+# Under HMG-API the state folder is the service's own (HMG-API hands it to the
+# app's user at every start), but files left inside by another user, e.g. from
+# an install when the app had a different user id, can't be written: "can't
+# create .../status: Permission denied" and the app never sees a reading. The
+# folder is ours, so such files can be replaced: copied when readable, else
+# removed.
+take_over_state() {
+    for _f in "$STATE"/*; do
+        [ -f "$_f" ] || continue
+        [ -w "$_f" ] && continue
+        if [ -r "$_f" ] && cat "$_f" > "$_f.new" 2>/dev/null && mv -f "$_f.new" "$_f" 2>/dev/null; then
+            log "took over ${_f##*/} (it belonged to another user)"
+        else
+            rm -f "$_f.new" 2>/dev/null
+            if rm -f "$_f" 2>/dev/null; then log "removed ${_f##*/}: another user's file this service can't read"
+            else log "can't write or replace ${_f##*/} in $STATE"; fi
+        fi
+    done
+}
+
 toast() {
-    am broadcast -a com.hkmc.intent.action.TOAST \
-        -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" \
-        --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || true
+    # one line each (no backslash continuations): HMG-API's install-time script check reads line by line
+    am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || true
+}
+
+# HMG-API: the split-screen panel page (PanelWidget) redraws from the status file
+panel_refresh() {
+    [ -n "$HMGAPI" ] || return 0
+    am broadcast -a com.nemesis.batterywatchdog.PANEL_REFRESH -n com.nemesis.batterywatchdog/.PanelWidget >/dev/null 2>&1 || true
 }
 
 # wall-clock seconds (keeps counting through suspend). If this date can't do
@@ -54,7 +97,7 @@ hex2dec() {
     while [ -n "$_h" ]; do
         _c=${_h%"${_h#?}"}; _h=${_h#?}
         case "$_c" in
-            [0-9]) _d=$_c;; a|A) _d=10;; b|B) _d=11;; c|C) _d=12;; d|D) _d=13;; e|E) _d=14;; f|F) _d=15;;
+            [0-9]) _d=$_c;; [aA]) _d=10;; [bB]) _d=11;; [cC]) _d=12;; [dD]) _d=13;; [eE]) _d=14;; [fF]) _d=15;;
             *) echo -1; return;;
         esac
         _r=$(( _r * 16 + _d ))
@@ -79,6 +122,10 @@ lines_off() { IFS=$_oifs; set +f; }
 DUMPSYS=/system/bin/dumpsys
 [ -n "$BWD_TEST_PATH" ] && DUMPSYS=dumpsys
 display_state() {
+    if [ -n "$HMGAPI" ]; then
+        # car on (READY) is what charges the 12V; fall back to the screen if unknown
+        case "$(hm_one hv.ready)" in 1) echo on; return ;; 0) echo off; return ;; esac
+    fi
     _p=$($DUMPSYS power 2>/dev/null)
     case "$_p" in
         *'mDisplayPowerRequest=policy=OFF'*|*'mDisplayPowerRequest=policy=0'*) echo off; return ;;
@@ -113,7 +160,7 @@ float10() {   # float bits (hex) -> value x10, or -1
     _e=$(( ((_b >> 23) & 255) - 127 ))
     [ "$_e" -lt -4 ] && { echo 0; return; }
     [ "$_e" -gt 22 ] && { echo -1; return; }
-    _m=$(( (_b & 8388607) | 8388608 ))
+    _m=$(( _b & 8388607 | 8388608 ))   # & binds tighter than |
     echo $(( (_m * 10) >> (23 - _e) ))
 }
 
@@ -189,11 +236,11 @@ temp_from_logcat() {
     lines_off
     if [ -n "$_eco" ]; then
         _c=${_eco#*\"outTemperature\":}; _c=${_c%%[!0-9-]*}
-        case "$_c" in ''|-|*[!0-9-]*) ;; *) if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=eco_log; return 0; fi;; esac
+        case "$_c" in ''|'-'|*[!0-9-]*) ;; *) if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=eco_log; return 0; fi;; esac
     fi
     if [ -n "$_ui" ]; then
         _f=${_ui#*temp = }; _f=${_f%% *}; _f=${_f%%.*}
-        case "$_f" in ''|-|*[!0-9-]*) ;; *) _c=$(( (_f - 32) * 5 / 9 )); if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=ui_log; return 0; fi;; esac
+        case "$_f" in ''|'-'|*[!0-9-]*) ;; *) _c=$(( (_f - 32) * 5 / 9 )); if in_range_c "$_c"; then TEMP_C=$_c; TEMP_SRC=ui_log; return 0; fi;; esac
     fi
     return 1
 }
@@ -211,9 +258,68 @@ read_temp() {
     TEMP_C=""; TEMP_SRC=""
 }
 
+# ---- HMG-API readings --------------------------------------------------------
+# `hmgapid vehicle a b ...` prints "<name> <value>" pairs; "-" = not known (yet).
+HM_NAMES="battery12v.soc hv.soc hv.health hv.ready charging outside_temp"
+# The 12V sensor's flags and the saver option (columns 8-11) come from HMG-API
+# releases that have these readings; HMG-API refuses a mod that asks for a reading
+# it doesn't know, so they're read only once mod.json lists them.
+HM_EXTRAS="battery12v.sensor_state battery12v.sensor_invalid battery12v.sensor_error battery12v.saver"
+[ -n "$HMGAPI" ] && grep -q '"battery12v.saver"' "${HMGAPI_MOD_DIR:-/nonexistent}/mod.json" 2>/dev/null && HM_NAMES="$HM_NAMES $HM_EXTRAS"
+hm_read() {   # sets HM_SOC HM_HV HM_SOH HM_READY HM_CHG HM_TEMP HM_SNS_* HM_SAVER (empty = unknown)
+    HM_SOC=""; HM_HV=""; HM_SOH=""; HM_READY=""; HM_CHG=""; HM_TEMP=""
+    HM_SNS_STATE=""; HM_SNS_INVALID=""; HM_SNS_ERROR=""; HM_SAVER=""
+    set -- $(hmgapid vehicle $HM_NAMES 2>/dev/null)
+    while [ $# -ge 2 ]; do
+        _v=$2; [ "$_v" = - ] && _v=""
+        case "$1" in
+            battery12v.soc) HM_SOC=$_v;; hv.soc) HM_HV=$_v;; hv.health) HM_SOH=$_v;;
+            hv.ready) HM_READY=$_v;; charging) HM_CHG=$_v;; outside_temp) HM_TEMP=$_v;;
+            battery12v.sensor_state) HM_SNS_STATE=$_v;; battery12v.sensor_invalid) HM_SNS_INVALID=$_v;;
+            battery12v.sensor_error) HM_SNS_ERROR=$_v;; battery12v.saver) HM_SAVER=$_v;;
+        esac
+        shift 2
+    done
+}
+hm_one() {   # one reading's value, or nothing
+    set -- $(hmgapid vehicle "$1" 2>/dev/null)
+    [ $# -ge 2 ] && [ "$2" != - ] && echo "$2"
+}
+tenths() {   # "70.5" / "83" -> 705 / 830; -1 if not a plain non-negative number
+    _v=$1
+    case "$_v" in ''|.*|*.*.*|*[!0-9.]*) echo -1; return;; esac
+    _i=${_v%%.*}; _f=0
+    case "$_v" in *.*) _f=${_v#*.}; _f=${_f%"${_f#?}"}; [ -n "$_f" ] || _f=0;; esac
+    echo $(( _i * 10 + _f ))
+}
+rawnum() {   # a whole number (sign allowed) as given, or nothing
+    case "$1" in ''|'-'|*[!0-9-]*|?*-*) return;; esac
+    echo "$1"
+}
+whole() {   # "-3.5" / "12" -> -3 / 12 (whole degrees, toward zero); nothing if not a number
+    _v=${1%%.*}
+    case "$_v" in ''|'-'|*[!0-9-]*|?*-*) return;; esac
+    echo "$_v"
+}
+
 SOH_RAW=""; HV10=""; TEMP_C=""
 sample() {   # sets S_RAW, S_PCT10 (-1 if invalid)
     S_RAW=""; S_PCT10=-1
+    if [ -n "$HMGAPI" ]; then
+        hm_read
+        S_RAW=$HM_SOC; S_PCT10=$(tenths "$HM_SOC")
+        [ "$S_PCT10" -le 1000 ] || S_PCT10=-1
+        _h=$(tenths "$HM_HV"); if [ "$_h" -ge 0 ] && [ "$_h" -le 1000 ]; then HV10=$_h; fi
+        case "$HM_SOH" in ''|*[!0-9]*) ;; *) SOH_RAW=$HM_SOH;; esac
+        _t=$(whole "$HM_TEMP")
+        if [ -n "$_t" ] && in_range_c "$_t"; then TEMP_C=$_t; TEMP_SRC=hmgapi; TEMP_T=$(now)
+        elif [ -n "$TEMP_C" ] && [ $(( $(now) - TEMP_T )) -gt 1800 ]; then TEMP_C=""; TEMP_SRC=""; fi
+        # columns 8-12, raw: the sensor flags and saver option when mod.json asks for
+        # them (empty otherwise); charging is the same getChargingStatus number
+        X_SNS_STATE=$(rawnum "$HM_SNS_STATE"); X_SNS_INVALID=$(rawnum "$HM_SNS_INVALID")
+        X_SNS_ERROR=$(rawnum "$HM_SNS_ERROR"); X_AUX=$(rawnum "$HM_SAVER"); X_CHG=$(rawnum "$HM_CHG")
+        return
+    fi
     _try=0
     while [ "$_try" -lt 5 ]; do
         [ -n "$TX_SOC" ] || break
@@ -265,10 +371,52 @@ write_status() {   # state
         echo "firmware=$FW"
         echo "verify=$VERIFY_WHY"
         echo "warn=$WARN_TEXT"
+        [ -n "$HMGAPI" ] && echo "hm_error=$HM_ERR"
     } > "$STATE/status" 2>/dev/null
 }
 
+# ---- settings from HMG-API (the mod) -----------------------------------------
+# The owner sets them on HMG-API's page for the mod (hmgapi-mod/settings.json) or in
+# the app, which saves to HMG-API too. Once a minute they're copied into the
+# one-value files load_cfg reads, clamped, and only when they changed.
+json_val() {   # json key -> the value as text (quotes dropped), or nothing
+    case "$1" in *"\"$2\""*) ;; *) return;; esac
+    _r=${1#*\"$2\"}; _r=${_r#*:}
+    while :; do case "$_r" in ' '*|"$NL"*) _r=${_r#?};; *) break;; esac; done
+    case "$_r" in
+        '"'*) _r=${_r#\"}; _r=${_r%%\"*};;
+        *) _r=${_r%%[,\}]*}; _r=${_r%%"$NL"*}; _r=$(trim "$_r");;
+    esac
+    echo "$_r"
+}
+set_cfg() {   # name value: write the one-value file if it differs
+    [ -n "$2" ] || return
+    [ "$(cfg "$1" x)" = "$2" ] && return
+    put "$STATE/$1" "$2" && log "setting $1=$2 (from HMG-API)"
+}
+clampn() {   # value min max -> whole number within, or nothing if not a number
+    _n=${1%%.*}
+    case "$_n" in ''|*[!0-9]*) return;; esac
+    [ "$_n" -lt "$2" ] && _n=$2; [ "$_n" -gt "$3" ] && _n=$3
+    echo "$_n"
+}
+HM_SET_T=0
+hm_settings() {
+    [ -n "$HMGAPI" ] || return
+    _t=$(uptime_s)
+    [ "$HM_SET_T" -gt 0 ] && [ $(( _t - HM_SET_T )) -lt "${BWD_SET_EVERY:-60}" ] && return
+    HM_SET_T=$_t; [ "$HM_SET_T" -gt 0 ] || HM_SET_T=1
+    _j=$(hmgapid setting-get 2>/dev/null)
+    case "$_j" in '{'*) ;; *) return;; esac
+    case "$(json_val "$_j" enabled)" in true) set_cfg enabled 1;; false) set_cfg enabled 0;; esac
+    set_cfg warn_pct "$(clampn "$(json_val "$_j" warn_pct)" 30 90)"
+    set_cfg drop_pct "$(clampn "$(json_val "$_j" drop_pct)" 5 40)"
+    case "$(json_val "$_j" toast_start)" in every) set_cfg toast_start 1;; warnings) set_cfg toast_start 0;; esac
+    set_cfg interval_s "$(clampn "$(json_val "$_j" interval_s)" 60 900)"
+}
+
 load_cfg() {
+    hm_settings
     ENABLED=$(cfg enabled 1)
     INTERVAL=$(cfg interval_s 300)
     EARLY_S=$(cfg early_s 60)        # sample this often during the first early_min of a drive,
@@ -348,6 +496,7 @@ session_start() {   # reason
         toast "12V battery $(fmt10 "$S_PCT10")%"
     fi
     write_status ok
+    panel_refresh
 }
 
 # ---- firmware / interface verification -----------------------------------------
@@ -373,6 +522,20 @@ isnum() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -gt 0 ] && [ "$1" -l
 verify() {
     VERIFIED=0; TX_SOC=""; TX_SOH=""; TX_HVSOC=""
     TX_SNS_STATE=""; TX_SNS_INVALID=""; TX_SNS_ERROR=""; TX_AUX=""; TX_CHG=""
+    if [ -n "$HMGAPI" ]; then
+        # HMG-API's map for this car resolves the readings; no numbers here
+        hm_read
+        if [ "$(tenths "$HM_SOC")" -ge 0 ]; then VERIFIED=1; VERIFY_WHY=hmgapi; HM_ERR=""
+        else
+            VERIFY_WHY=hmgapi_no_reading
+            # HMG-API's own answer, for Diagnostics: a value of "-", "not declared in
+            # mod.json" until an update is applied, "the vehicle service isn't running (yet)"
+            _e=$(hmgapid vehicle battery12v.soc 2>&1); _e=${_e%%"$NL"*}
+            [ "$_e" != "$HM_ERR" ] && log "no 12V reading from HMG-API: ${_e:-(no answer)}"
+            HM_ERR=$_e
+        fi
+        return
+    fi
     if ! service list 2>/dev/null | grep "$SVC" | grep -q "$HSCAN_IFACE"; then
         VERIFY_WHY=interface_mismatch; return
     fi
@@ -416,11 +579,12 @@ log "v$VERSION start; enabled=$ENABLED interval=${INTERVAL}s poll=${POLL}s gap=$
 
 # wait (bounded) for the telematics service
 i=0
+[ -n "$HMGAPI" ] && i=120 && log "HMG-API mod $HMGAPI_MOD; state in $STATE" && take_over_state
 while [ "$i" -lt 120 ]; do
     service check "$SVC" 2>/dev/null | grep -q found && break
     sleep 2; i=$((i + 2))
 done
-[ "$i" -ge 120 ] && log "$SVC not registered after 120s; continuing anyway"
+[ "$i" -ge 120 ] && [ -z "$HMGAPI" ] && log "$SVC not registered after 120s; continuing anyway"
 
 verify
 log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH sensor=$TX_SNS_STATE/$TX_SNS_INVALID/$TX_SNS_ERROR aux=$TX_AUX chg=$TX_CHG"
@@ -434,16 +598,32 @@ PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
 NEED_SESSION=service_start
 OFF_T=0
 LOOPS=0
+START_UP=$(uptime_s)
 
 while :; do
     load_cfg
+    if mod_active; then
+        [ "$IDLE" = 1 ] || log "the HMG-API mod $MOD_ID is installed and on: this copy stays idle"
+        IDLE=1; WARN_TEXT=""; write_status other_install
+        LOOPS=$((LOOPS + 1))
+        [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
+        if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        DISP=$(display_state); LAST_TICK=$(now); NEED_SESSION=mod_off; continue
+    fi
+    [ "$IDLE" = 1 ] && { log "the HMG-API mod is gone or off: monitoring again"; IDLE=0; }
     if [ "$ENABLED" != "1" ]; then
         DISP=$(display_state); write_status disabled
-        sleep 60; LAST_TICK=$(now); continue
+        LOOPS=$((LOOPS + 1))
+        [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
+        if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        LAST_TICK=$(now); continue
     fi
     if [ "$VERIFIED" != 1 ]; then
         # make no calls; recheck in a minute in case the app has resolved the numbers
-        write_status unverified
+        # under HMG-API, the first minutes after a start or update are "waiting": its
+        # readings can take a minute to come up, and that isn't "not supported"
+        if [ -n "$HMGAPI" ] && [ $(( $(uptime_s) - START_UP )) -lt "${BWD_WAIT_S:-300}" ]; then write_status waiting
+        else write_status unverified; fi
         LOOPS=$((LOOPS + 1))
         [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
         if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
@@ -476,7 +656,7 @@ while :; do
         sample
         append sample "$S_RAW" "$S_PCT10"
         LAST_SAMPLE=$T
-        if [ "$S_PCT10" -ge 0 ]; then put "$STATE/last" "$(now) $S_PCT10"; write_status ok; fi
+        if [ "$S_PCT10" -ge 0 ]; then put "$STATE/last" "$(now) $S_PCT10"; write_status ok; panel_refresh; fi
     fi
 
     [ "$DISP" != "$PREV_DISP" ] && log "display $PREV_DISP -> $DISP"

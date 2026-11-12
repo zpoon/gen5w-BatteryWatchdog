@@ -72,11 +72,18 @@ jobs:
 
       - name: Test the monitor service with mocked car services
         run: |
-          tests/test_service.sh sh
-          tests/test_service.sh mksh
-          set -o pipefail
-          tests/test_service.sh /tmp/mksh-r43 2>&1 | tee r43.log \
-            || { tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done; exit 1; }
+          # the three shells side by side (each run's cases already run at once)
+          tests/test_service.sh sh > sh.log 2>&1 & P1=$!
+          tests/test_service.sh mksh > mksh.log 2>&1 & P2=$!
+          tests/test_service.sh /tmp/mksh-r43 > r43.log 2>&1 & P3=$!
+          OK=1
+          wait $P1 || OK=0; cat sh.log
+          wait $P2 || OK=0; cat mksh.log
+          if ! wait $P3; then
+            OK=0; tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done
+          fi
+          cat r43.log
+          [ "$OK" = 1 ]
 
       - name: Build APK
         env:
@@ -103,6 +110,26 @@ jobs:
           cp app/batterywatchdog.apk package/app/batterywatchdog.apk
           tools/make_package.sh
 
+      # HMG-API's packaging tools, pinned (nothing from it goes into our files but
+      # its signature and NEMESIS wrapper scripts, which mknemesismod.sh adds)
+      - uses: actions/checkout@v5
+        with:
+          repository: VysseCodes/HMG-API
+          ref: 9b57914818e93cf62887349b60dacbca83396bfe
+          path: hmgapi-tools
+
+      - name: Build the HMG-API mod (signed) and its NEMESIS package
+        env:
+          MOD_KEY: ${{ secrets.HMGAPI_MOD_KEY }}
+        run: |
+          if [ -z "$MOD_KEY" ]; then
+            echo "::notice title=HMG-API mod::no HMGAPI_MOD_KEY secret: the mod isn't built (a throwaway key would give it a different identity)"
+            exit 0
+          fi
+          ( umask 077; printf '%s\n' "$MOD_KEY" > "$RUNNER_TEMP/mod.key" )   # only the key is private
+          tools/make_hmgapi_mod.sh hmgapi-tools "$RUNNER_TEMP/mod.key"
+          rm -f "$RUNNER_TEMP/mod.key" "$RUNNER_TEMP/mod.key.pub"
+
       - name: Bundle the probe for USB
         run: (cd research/probe-12v && zip -X ../../dist/probe-12v-USB.zip NEMESIS.data NEMESIS.sh)
 
@@ -113,6 +140,7 @@ jobs:
             dist/gen5w-BatteryWatchdog-USB.zip
             dist/battery.watchdog.zip
             dist/probe-12v-USB.zip
+            dist/battery-watchdog-*.zip
             app/batterywatchdog.apk
 
       - name: Attach files to the release

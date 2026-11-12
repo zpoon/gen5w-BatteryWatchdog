@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "settings": [
+    {
+      "key": "enabled",
+      "type": "toggle",
+      "default": true,
+      "title": "Monitor the 12V battery"
+    },
+    {
+      "key": "warn_pct",
+      "type": "number",
+      "default": 60,
+      "title": "Warn when a drive starts below (%)",
+      "description": "30 to 90. Applies from the next drive."
+    },
+    {
+      "key": "drop_pct",
+      "type": "number",
+      "default": 15,
+      "title": "Warn when it drops this much while parked (points)",
+      "description": "5 to 40. Applies from the next drive."
+    },
+    {
+      "key": "toast_start",
+      "type": "choice",
+      "default": "warnings",
+      "title": "Pop-up when the car starts",
+      "options": [
+        {
+          "value": "warnings",
+          "title": "Only for warnings"
+        },
+        {
+          "value": "every",
+          "title": "Every start, with the reading"
+        }
+      ]
+    },
+    {
+      "key": "interval_s",
+      "type": "choice",
+      "default": "300",
+      "title": "Read the 12V every (while the car is on)",
+      "options": [
+        {
+          "value": "60",
+          "title": "1 minute"
+        },
+        {
+          "value": "300",
+          "title": "5 minutes"
+        },
+        {
+          "value": "900",
+          "title": "15 minutes"
+        }
+      ]
+    }
+  ]
+}

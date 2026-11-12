@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Battery Watchdog's page in the right-hand split-screen panel (HMG-API provides.panel).
+     Filled in by PanelWidget from the service's status file. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/panel_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="20dp">
+
+    <TextView android:id="@+id/panel_title"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:textColor="#96a0aa" android:textSize="22sp" android:text="12V battery" />
+
+    <TextView android:id="@+id/panel_big"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:textColor="#ffffff" android:textSize="72sp" android:textStyle="bold" android:text="--" />
+
+    <TextView android:id="@+id/panel_ctx"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:textColor="#c8d0d8" android:textSize="20sp" android:gravity="center" android:text="" />
+
+    <TextView android:id="@+id/panel_park"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:textColor="#ffffff" android:textSize="20sp" android:gravity="center" android:text="" />
+
+    <TextView android:id="@+id/panel_warn"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:textColor="#ffaa3c" android:textSize="20sp" android:gravity="center" android:text="" />
+
+    <TextView android:id="@+id/panel_upd"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:textColor="#96a0aa" android:textSize="16sp" android:gravity="center" android:text="" />
+</LinearLayout>
