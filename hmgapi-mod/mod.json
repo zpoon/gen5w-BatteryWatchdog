@@ -21,7 +21,7 @@
   "provides": {
     "panel": [{"title": "12V battery", "widget": "com.nemesis.batterywatchdog/.PanelWidget"}],
     "launcher": [
-      { "package": "com.nemesis.batterywatchdog", "class": "com.nemesis.batterywatchdog.MainActivity", "title": "Battery Watchdog",
+      { "package": "com.nemesis.batterywatchdog", "class": "com.nemesis.batterywatchdog.MainActivity", "title": "Battery",
                   "icon": "icons/icon.png", "icon_night": "icons/icon_night.png",
                   "icon_disabled": "icons/icon_disabled.png", "icon_disabled_night": "icons/icon_disabled_night.png" }
     ]
