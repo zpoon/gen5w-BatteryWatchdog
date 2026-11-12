@@ -220,9 +220,13 @@ grep -q ',start,83,830,96,705,12,,,,,0$' "$T/state/log.csv" || fail "HA1: first 
 grep -q 'PANEL_REFRESH -n com.nemesis.batterywatchdog/.PanelWidget' "$T/am" || fail "HA1: should refresh the panel page"
 rm -rf "$T"; echo "  HA1 HMG-API readings: ok"
 
-# HA2: no 12V reading from HMG-API (car not mapped) -> unverified, nothing logged
+# HA2: no 12V reading from HMG-API: "waiting" for the first minutes after a start
+# (readings can take a minute after an install), then unverified; nothing logged
 T=$(mktemp -d); hm_setup "$T"; rm "$T/hm/battery12v.soc"
 hm_run "$T" 3
+grep -q '^state=waiting' "$T/state/status" || fail "HA2: should be waiting right after a start"
+grep -q 'no 12V reading from HMG-API' "$T/out" || fail "HA2: should log HMG-API's answer"
+export BWD_WAIT_S=0; hm_run "$T" 3; unset BWD_WAIT_S
 grep -q '^state=unverified' "$T/state/status" || fail "HA2: should be unverified"
 grep -q '^verify=hmgapi_no_reading$' "$T/state/status" || fail "HA2: reason should be hmgapi_no_reading"
 [ ! -s "$T/state/log.csv" ] || fail "HA2: logged readings without a 12V value"

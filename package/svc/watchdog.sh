@@ -371,6 +371,7 @@ write_status() {   # state
         echo "firmware=$FW"
         echo "verify=$VERIFY_WHY"
         echo "warn=$WARN_TEXT"
+        [ -n "$HMGAPI" ] && echo "hm_error=$HM_ERR"
     } > "$STATE/status" 2>/dev/null
 }
 
@@ -483,7 +484,15 @@ verify() {
     if [ -n "$HMGAPI" ]; then
         # HMG-API's map for this car resolves the readings; no numbers here
         hm_read
-        if [ "$(tenths "$HM_SOC")" -ge 0 ]; then VERIFIED=1; VERIFY_WHY=hmgapi; else VERIFY_WHY=hmgapi_no_reading; fi
+        if [ "$(tenths "$HM_SOC")" -ge 0 ]; then VERIFIED=1; VERIFY_WHY=hmgapi; HM_ERR=""
+        else
+            VERIFY_WHY=hmgapi_no_reading
+            # HMG-API's own answer, for Diagnostics: a value of "-", "not declared in
+            # mod.json" until an update is applied, "the vehicle service isn't running (yet)"
+            _e=$(hmgapid vehicle battery12v.soc 2>&1); _e=${_e%%"$NL"*}
+            [ "$_e" != "$HM_ERR" ] && log "no 12V reading from HMG-API: ${_e:-(no answer)}"
+            HM_ERR=$_e
+        fi
         return
     fi
     if ! service list 2>/dev/null | grep "$SVC" | grep -q "$HSCAN_IFACE"; then
@@ -548,6 +557,7 @@ PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
 NEED_SESSION=service_start
 OFF_T=0
 LOOPS=0
+START_UP=$(uptime_s)
 
 while :; do
     load_cfg
@@ -566,7 +576,10 @@ while :; do
     fi
     if [ "$VERIFIED" != 1 ]; then
         # make no calls; recheck in a minute in case the app has resolved the numbers
-        write_status unverified
+        # under HMG-API, the first minutes after a start or update are "waiting": its
+        # readings can take a minute to come up, and that isn't "not supported"
+        if [ -n "$HMGAPI" ] && [ $(( $(uptime_s) - START_UP )) -lt "${BWD_WAIT_S:-300}" ]; then write_status waiting
+        else write_status unverified; fi
         LOOPS=$((LOOPS + 1))
         [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
         if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi

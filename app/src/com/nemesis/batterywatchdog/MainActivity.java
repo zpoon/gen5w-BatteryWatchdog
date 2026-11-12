@@ -422,6 +422,16 @@ public class MainActivity extends Activity {
         dial.warn10 = warnPct * 10;
         List<long[]> drives = loadDrives(status);
         legend.setText(legendText());
+        if (hm() && "waiting".equals(state)) {
+            // just started or updated: HMG-API's readings can take a minute to come up
+            dial.show(-1, "\u2026", pal.muted);
+            setPill("Starting", pal.muted);
+            updLabel.setText("Waiting for the first reading from HMG-API. This can take a minute after an install or update.");
+            ctxLabel.setText("");
+            setBanner(null);
+            chart.setData(lastN(drives, 30), warnPct * 10, dropPct * 10);
+            return;
+        }
         if (!hm() && "other_install".equals(state)) {
             // the HMG-API mod is installed and on: this NEMESIS copy steps aside (svc/watchdog.sh)
             dial.show(-1, "Idle", pal.muted);
@@ -438,7 +448,9 @@ public class MainActivity extends Activity {
             setPill("Paused", pal.amber);
             updLabel.setText("Nothing is read from the car.");
             ctxLabel.setText("");
-            setBanner(hm() ? "HMG-API has no 12V reading for this car yet, so nothing is logged. See Settings \u2192 Tools \u2192 Diagnostics."
+            String hmErr = kv(status, "hm_error");
+            setBanner(hm() ? "HMG-API gives no 12V reading on this car, so nothing is logged"
+                    + (hmErr.length() > 0 ? " (HMG-API says: " + hmErr + ")" : "") + ". See Settings \u2192 Tools \u2192 Diagnostics."
                 : "interface_mismatch".equals(verifyState)
                 ? "The car's telematics service isn't the one this package was built for, so nothing is read."
                 : "This firmware isn't verified yet, so nothing is read from the car. See Settings → Tools → Diagnostics.");
