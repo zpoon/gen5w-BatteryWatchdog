@@ -1,38 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Battery Watchdog's page in the right-hand split-screen panel (HMG-API provides.panel).
-     Filled in by PanelWidget from the service's status file. -->
+<!-- Battery Watchdog's page in the right-hand split-screen panel (HMG-API provides.panel),
+     in the app's design: the 12V dial (drawn by PanelWidget, shared with the app), when
+     it was read, the warning banner, and two tiles. HMG-API's panel shows the page
+     title itself. Colours and card backgrounds are set by PanelWidget, day or night. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="20dp">
+    android:background="#101216"
+    android:padding="14dp">
 
-    <TextView android:id="@+id/panel_title"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:textColor="#96a0aa" android:textSize="22sp" android:text="12V battery" />
-
-    <TextView android:id="@+id/panel_big"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:textColor="#ffffff" android:textSize="72sp" android:textStyle="bold" android:text="--" />
-
-    <TextView android:id="@+id/panel_ctx"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:textColor="#c8d0d8" android:textSize="20sp" android:gravity="center" android:text="" />
-
-    <TextView android:id="@+id/panel_park"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:textColor="#ffffff" android:textSize="20sp" android:gravity="center" android:text="" />
-
-    <TextView android:id="@+id/panel_warn"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:textColor="#ffaa3c" android:textSize="20sp" android:gravity="center" android:text="" />
+    <ImageView android:id="@+id/panel_dial"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:scaleType="fitCenter" android:contentDescription="12V battery" />
 
     <TextView android:id="@+id/panel_upd"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:textColor="#96a0aa" android:textSize="16sp" android:gravity="center" android:text="" />
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:textColor="#96A0AA" android:textSize="15sp" android:text="" />
+
+    <TextView android:id="@+id/panel_warn"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:background="@drawable/panel_banner_night"
+        android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:textColor="#FFAA3C" android:textSize="15sp" android:maxLines="3" android:ellipsize="end"
+        android:visibility="gone" android:text="" />
+
+    <LinearLayout android:id="@+id/panel_tiles"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp" android:orientation="horizontal">
+
+        <LinearLayout android:id="@+id/panel_tile1"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:background="@drawable/panel_tile_night"
+            android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingTop="8dp" android:paddingBottom="8dp">
+            <TextView android:id="@+id/panel_t1_cap"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#96A0AA" android:textSize="13sp" android:singleLine="true" android:ellipsize="end"
+                android:text="Parked before this drive" />
+            <TextView android:id="@+id/panel_t1_val"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFF" android:textSize="22sp" android:singleLine="true" android:text="--" />
+            <TextView android:id="@+id/panel_t1_sub"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#96A0AA" android:textSize="13sp" android:singleLine="true" android:ellipsize="end" android:text="" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/panel_tile2"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginLeft="10dp"
+            android:orientation="vertical" android:background="@drawable/panel_tile_night"
+            android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingTop="8dp" android:paddingBottom="8dp">
+            <TextView android:id="@+id/panel_t2_cap"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#96A0AA" android:textSize="13sp" android:singleLine="true" android:ellipsize="end"
+                android:text="Main battery" />
+            <TextView android:id="@+id/panel_t2_val"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFF" android:textSize="22sp" android:singleLine="true" android:text="--" />
+            <TextView android:id="@+id/panel_t2_sub"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#96A0AA" android:textSize="13sp" android:singleLine="true" android:ellipsize="end" android:text="" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

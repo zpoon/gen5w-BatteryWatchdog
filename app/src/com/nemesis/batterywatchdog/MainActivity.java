@@ -1592,7 +1592,14 @@ public class MainActivity extends Activity {
 
         @Override
         protected void onDraw(Canvas c) {
-            float size = Math.min(getWidth(), getHeight()), cx = getWidth() / 2f, cy = getHeight() / 2f;
+            paint(c, getWidth(), getHeight(), pal, value10, warn10, text, color, d,
+                  ring, big, small, tickP, oval);
+        }
+
+        /** draws the dial into w x h: shared with the split-screen panel (PanelWidget) */
+        static void paint(Canvas c, float w, float h, Pal pal, int value10, int warn10, String text, int color, float d,
+                          Paint ring, Paint big, Paint small, Paint tickP, android.graphics.RectF oval) {
+            float size = Math.min(w, h), cx = w / 2f, cy = h / 2f;
             float sw = size * 0.085f, r = size / 2f - sw;
             oval.set(cx - r, cy - r, cx + r, cy + r);
             ring.setStrokeWidth(sw);
