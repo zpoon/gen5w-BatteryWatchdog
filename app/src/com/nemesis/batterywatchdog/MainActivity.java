@@ -244,7 +244,8 @@ public class MainActivity extends Activity {
         t.setText("Settings"); t.setTextColor(pal.text); t.setTextSize(22);
         t.setPadding(dp(18), 0, 0, 0);
         head.addView(t);
-        savedLabel = hint("Changes save by themselves and apply from the next drive.");
+        savedLabel = hint(hm() ? "Changes save by themselves (also on HMG-API's page for this mod) and apply from the next drive."
+                : "Changes save by themselves and apply from the next drive.");
         savedLabel.setPadding(0, 0, 0, 0);
         savedLabel.setGravity(android.view.Gravity.RIGHT);
         head.addView(savedLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -273,12 +274,17 @@ public class MainActivity extends Activity {
         s.addView(caption("Read every (screen on)"));
         intSeg = new Seg(new String[] { "1 min", "5 min", "15 min" }, new Setter() { public void set(int i) { interval = INTERVALS[i]; changed(); } });
         s.addView(intSeg.row);
-        s.addView(caption("Decode the value as"));
+        // decode and scale only matter for the raw value the NEMESIS package reads;
+        // HMG-API gives the 12V as a percentage
+        LinearLayout raw = column();
+        raw.addView(caption("Decode the value as"));
         decSeg = new Seg(DECODE, new Setter() { public void set(int i) { decode = i; changed(); } });
-        s.addView(decSeg.row);
-        s.addView(caption("Scale"));
+        raw.addView(decSeg.row);
+        raw.addView(caption("Scale"));
         scaleSeg = new Seg(new String[] { "1 raw = 1 %", "1 raw = 0.5 %" }, new Setter() { public void set(int i) { scaleX10 = i == 0 ? 10 : 5; changed(); } });
-        s.addView(scaleSeg.row);
+        raw.addView(scaleSeg.row);
+        if (hm()) raw.setVisibility(View.GONE);
+        s.addView(raw);
         s.addView(tool("Read sensor now", new View.OnClickListener() { public void onClick(View v) { readNow(); } }));
         rawLabel = hint("");
         s.addView(rawLabel);
@@ -1492,6 +1498,43 @@ public class MainActivity extends Activity {
         decode     = clamp(readInt("decode", 1), 0, 2);
         scaleX10   = readInt("scale_x10", 10) == 5 ? 5 : 10;
         interval   = readInt("interval_s", 300);
+        if (hm()) loadHmSettings();
+    }
+
+    // ---- settings kept by HMG-API (the mod) ------------------------------------
+    // HMG-API stores them (its page for the mod comes from hmgapi-mod/settings.json);
+    // the monitor copies them into its files once a minute. The app reads them from
+    // HMG-API and saves to both, so either place can change them.
+
+    void loadHmSettings() {
+        String j = hmgapid("setting-get").trim();
+        org.json.JSONObject o;
+        try { o = new org.json.JSONObject(j.startsWith("{") ? j : "{}"); } catch (Exception e) { return; }
+        if (!o.has("warn_pct")) {
+            // never saved in HMG-API yet: give it the values in use, so its page shows them
+            saveHmSettings();
+            return;
+        }
+        if (o.has("enabled"))     enabled = o.optBoolean("enabled", enabled);
+        if (o.has("warn_pct"))    warnPct = clamp(o.optInt("warn_pct", warnPct), 30, 90);
+        if (o.has("drop_pct"))    dropPct = clamp(o.optInt("drop_pct", dropPct), 5, 40);
+        if (o.has("toast_start")) toastStart = "every".equals(o.optString("toast_start"));
+        if (o.has("interval_s"))  interval = clamp(parse(o.optString("interval_s"), interval), 60, 900);
+    }
+
+    /** "" when saved, else what HMG-API said */
+    String saveHmSettings() {
+        org.json.JSONObject o = new org.json.JSONObject();
+        try {
+            o.put("enabled", enabled);
+            o.put("warn_pct", warnPct);
+            o.put("drop_pct", dropPct);
+            o.put("toast_start", toastStart ? "every" : "warnings");
+            o.put("interval_s", String.valueOf(interval));
+        } catch (Exception e) { return e.toString(); }
+        // the JSON has no single quotes, so it goes through the shell as one word
+        String r = hmgapid("setting-set '" + o.toString() + "'").trim();
+        return r.startsWith("saved") ? "" : (r.length() > 0 ? r : "no answer from HMG-API");
     }
 
     /** "" when saved, else the error */
@@ -1505,7 +1548,8 @@ public class MainActivity extends Activity {
             + "; echo " + scaleX10 + " > " + STATE + "/scale_x10"
             + "; echo " + interval + " > " + STATE + "/interval_s";
         String r = runRoot(cmd);
-        return r.startsWith("ERR") ? r : "";
+        if (r.startsWith("ERR")) return r;
+        return hm() ? saveHmSettings() : "";
     }
 
     void refreshButtons() {

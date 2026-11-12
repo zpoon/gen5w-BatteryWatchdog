@@ -192,6 +192,7 @@ hm_setup() {
     mkdir -p "$1/hm"
     cat > "$1/bin/hmgapid" <<EOT
 #!/bin/sh
+if [ "\$1" = setting-get ]; then cat "$1/settings.json" 2>/dev/null || echo '{}'; exit 0; fi
 [ "\$1" = vehicle ] || exit 2
 shift
 for n; do v=\$(cat "$1/hm/\$n" 2>/dev/null); echo "\$n \${v:--}"; done
@@ -288,5 +289,22 @@ T=$(mktemp -d); hm_setup "$T"; mkdir -p "$T/mods/battery-watchdog"; echo '{}' > 
 export BWD_HMGAPI_MODS="$T/mods"; hm_run "$T" 3; unset BWD_HMGAPI_MODS
 grep -q '^state=ok' "$T/state/status" || fail "G3: the mod should monitor"
 rm -rf "$T"; echo "  G3 the mod ignores the check: ok"
+
+# HA6: settings from HMG-API's page land in the monitor's files, clamped; only changes are written
+T=$(mktemp -d); hm_setup "$T"
+echo '{"enabled":true,"warn_pct":95,"drop_pct": 12 ,"toast_start":"every","interval_s":"60"}' > "$T/settings.json"
+hm_run "$T" 3
+[ "$(cat "$T/state/warn_pct")" = 90 ] || fail "HA6: warn_pct 95 should clamp to 90"
+[ "$(cat "$T/state/drop_pct")" = 12 ] || fail "HA6: drop_pct should be 12"
+[ "$(cat "$T/state/toast_start")" = 1 ] || fail "HA6: every start should be toast_start=1"
+[ "$(cat "$T/state/interval_s")" = 60 ] || fail "HA6: interval should be 60"
+[ "$(cat "$T/state/enabled")" = 1 ] || fail "HA6: enabled should be 1"
+[ "$(grep -c 'from HMG-API' "$T/out")" -eq 5 ] || fail "HA6: should log each change once"
+echo '{"enabled":false,"warn_pct":"abc"}' > "$T/settings.json"
+hm_run "$T" 3
+[ "$(cat "$T/state/enabled")" = 0 ] || fail "HA6: turned off in HMG-API"
+[ "$(cat "$T/state/warn_pct")" = 90 ] || fail "HA6: a bad number keeps the last value"
+grep -q '^state=disabled' "$T/state/status" || fail "HA6: should be disabled"
+rm -rf "$T"; echo "  HA6 settings from HMG-API: ok"
 
 echo "PASS ($SH)"

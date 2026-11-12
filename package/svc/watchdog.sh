@@ -375,7 +375,48 @@ write_status() {   # state
     } > "$STATE/status" 2>/dev/null
 }
 
+# ---- settings from HMG-API (the mod) -----------------------------------------
+# The owner sets them on HMG-API's page for the mod (hmgapi-mod/settings.json) or in
+# the app, which saves to HMG-API too. Once a minute they're copied into the
+# one-value files load_cfg reads, clamped, and only when they changed.
+json_val() {   # json key -> the value as text (quotes dropped), or nothing
+    case "$1" in *"\"$2\""*) ;; *) return;; esac
+    _r=${1#*\"$2\"}; _r=${_r#*:}
+    while :; do case "$_r" in ' '*|"$NL"*) _r=${_r#?};; *) break;; esac; done
+    case "$_r" in
+        '"'*) _r=${_r#\"}; _r=${_r%%\"*};;
+        *) _r=${_r%%[,\}]*}; _r=${_r%%"$NL"*}; _r=$(trim "$_r");;
+    esac
+    echo "$_r"
+}
+set_cfg() {   # name value: write the one-value file if it differs
+    [ -n "$2" ] || return
+    [ "$(cfg "$1" x)" = "$2" ] && return
+    put "$STATE/$1" "$2" && log "setting $1=$2 (from HMG-API)"
+}
+clampn() {   # value min max -> whole number within, or nothing if not a number
+    _n=${1%%.*}
+    case "$_n" in ''|*[!0-9]*) return;; esac
+    [ "$_n" -lt "$2" ] && _n=$2; [ "$_n" -gt "$3" ] && _n=$3
+    echo "$_n"
+}
+HM_SET_T=0
+hm_settings() {
+    [ -n "$HMGAPI" ] || return
+    _t=$(uptime_s)
+    [ "$HM_SET_T" -gt 0 ] && [ $(( _t - HM_SET_T )) -lt "${BWD_SET_EVERY:-60}" ] && return
+    HM_SET_T=$_t; [ "$HM_SET_T" -gt 0 ] || HM_SET_T=1
+    _j=$(hmgapid setting-get 2>/dev/null)
+    case "$_j" in '{'*) ;; *) return;; esac
+    case "$(json_val "$_j" enabled)" in true) set_cfg enabled 1;; false) set_cfg enabled 0;; esac
+    set_cfg warn_pct "$(clampn "$(json_val "$_j" warn_pct)" 30 90)"
+    set_cfg drop_pct "$(clampn "$(json_val "$_j" drop_pct)" 5 40)"
+    case "$(json_val "$_j" toast_start)" in every) set_cfg toast_start 1;; warnings) set_cfg toast_start 0;; esac
+    set_cfg interval_s "$(clampn "$(json_val "$_j" interval_s)" 60 900)"
+}
+
 load_cfg() {
+    hm_settings
     ENABLED=$(cfg enabled 1)
     INTERVAL=$(cfg interval_s 300)
     EARLY_S=$(cfg early_s 60)        # sample this often during the first early_min of a drive,
@@ -572,7 +613,10 @@ while :; do
     [ "$IDLE" = 1 ] && { log "the HMG-API mod is gone or off: monitoring again"; IDLE=0; }
     if [ "$ENABLED" != "1" ]; then
         DISP=$(display_state); write_status disabled
-        sleep 60; LAST_TICK=$(now); continue
+        LOOPS=$((LOOPS + 1))
+        [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
+        if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        LAST_TICK=$(now); continue
     fi
     if [ "$VERIFIED" != 1 ]; then
         # make no calls; recheck in a minute in case the app has resolved the numbers

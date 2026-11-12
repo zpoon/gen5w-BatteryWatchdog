@@ -45,6 +45,8 @@ mkdir -p "$M/svc" "$M/app" "$M/icons"
 cp "$ROOT/hmgapi-mod/icons/"*.png "$M/icons/"
 cp "$APK" "$M/app/batterywatchdog.apk"
 cp "$ROOT/LICENSE" "$M/LICENSE"
+cp "$ROOT/hmgapi-mod/settings.json" "$M/settings.json"   # HMG-API's settings page for the mod
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$M/settings.json" || { echo "settings.json isn't valid JSON"; exit 1; }
 sed "s/^VERSION=.*/VERSION=$V   # stamped by tools\/make_hmgapi_mod.sh/" "$ROOT/package/svc/watchdog.sh" > "$M/svc/watchdog.sh"
 python3 - "$ROOT/hmgapi-mod/mod.json" "$M/mod.json" "$V" <<'PY'
 import json, sys

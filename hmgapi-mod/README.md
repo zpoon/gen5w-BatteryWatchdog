@@ -9,6 +9,22 @@ With HMG-API, the mod reads the car through named readings
 `outside_temp`), mapped per car by HMG-API. It needs no transaction numbers, no
 firmware list, no temperature hunting and no root plumbing.
 
+## Settings
+
+HMG-API keeps the mod's settings, so they show on HMG-API's own page for the
+mod (`settings.json`: monitor on/off, the two warning levels, the start pop-up,
+the read interval) as well as in the app, and either place can change them:
+
+- The app reads them with `hmgapid setting-get` and saves with `setting-set`
+  (it also writes the monitor's files, so its changes apply at once). The first
+  time, it gives HMG-API the values already in use.
+- The monitor copies them into its one-value files once a minute (clamped: warn
+  30-90 %, drop 5-40 points, interval 60-900 s), writing only what changed and
+  logging each change. A value that isn't a number keeps the last one.
+- Decode and scale aren't there: HMG-API gives the 12V as a percentage, so the
+  app hides them in HMG-API mode.
+- Test HA6 in `tests/test_service.sh`.
+
 ## One or the other
 
 The mod and the NEMESIS package use the same app (`com.nemesis.batterywatchdog`,
