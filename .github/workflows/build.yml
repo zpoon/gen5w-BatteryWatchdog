@@ -72,11 +72,18 @@ jobs:
 
       - name: Test the monitor service with mocked car services
         run: |
-          tests/test_service.sh sh
-          tests/test_service.sh mksh
-          set -o pipefail
-          tests/test_service.sh /tmp/mksh-r43 2>&1 | tee r43.log \
-            || { tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done; exit 1; }
+          # the three shells side by side (each run's cases already run at once)
+          tests/test_service.sh sh > sh.log 2>&1 & P1=$!
+          tests/test_service.sh mksh > mksh.log 2>&1 & P2=$!
+          tests/test_service.sh /tmp/mksh-r43 > r43.log 2>&1 & P3=$!
+          OK=1
+          wait $P1 || OK=0; cat sh.log
+          wait $P2 || OK=0; cat mksh.log
+          if ! wait $P3; then
+            OK=0; tail -n 15 r43.log | while IFS= read -r l; do echo "::error title=mksh R43::$l"; done
+          fi
+          cat r43.log
+          [ "$OK" = 1 ]
 
       - name: Build APK
         env:
