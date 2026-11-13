@@ -203,7 +203,10 @@ decode() {   # RAW -> tenths of a percent, or -1
 #      decoded as below. Available right away, unlike 1 and 2.
 TEMP_SRC=""; TEMP_LINE=""
 trim() { _t=$1; while :; do case "$_t" in ' '*) _t=${_t# };; *' ') _t=${_t% };; *) break;; esac; done; echo "$_t"; }
-in_range_c() { [ "$1" -ge -45 ] 2>/dev/null && [ "$1" -le 55 ]; }   # believable outdoor range
+# Believable outdoor range. -40 is left out: it's the raw zero of the car's
+# temperature signals (-40 C = -40 F), reported before climate control has a real
+# value, e.g. just after the car wakes (seen on an Ioniq 5 through HMG-API).
+in_range_c() { [ "$1" -gt -40 ] 2>/dev/null && [ "$1" -le 55 ]; }
 
 # The climate dump shows the raw CAN values in hex, e.g. on a 2023 Ioniq 5:
 #     OutTempC : 0xff      (0xff = not available)

@@ -277,6 +277,16 @@ t_HA3() {
     rm -rf "$T"; echo "  HA3 decimals and unknowns: ok"
 }
 
+# HA8: -40 (the car's "no value yet", seen right after a wake) isn't a temperature; -39 is
+t_HA8() {
+    T=$(mktemp -d); hm_setup "$T"; echo -40 > "$T/hm/outside_temp"
+    hm_run "$T" 3
+    grep -q '^temp_c=$' "$T/state/status" || fail "HA8: -40 should be no temperature"
+    echo -39.5 > "$T/hm/outside_temp"; hm_run "$T" 3
+    grep -q '^temp_c=-39$' "$T/state/status" || fail "HA8: -39.5 C is a real (very cold) reading"
+    rm -rf "$T"; echo "  HA8 -40 is no reading: ok"
+}
+
 # HA4: hv.ready unknown -> falls back to the screen state
 t_HA4() {
     T=$(mktemp -d); hm_setup "$T"; rm "$T/hm/hv.ready"
@@ -369,12 +379,12 @@ t_HA6() {
 # spent in sleeps standing in for the car's screen going off and on. Output is
 # kept per case and printed in order.
 OUT=$(mktemp -d)
-for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7; do
+for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7 HA8; do
     ( "t_$c" ) > "$OUT/$c" 2>&1 &
     echo $! > "$OUT/$c.pid"
 done
 FAILED=""
-for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7; do
+for c in A A2 B C D E F N O Q R P M HA1 HA2 HA3 HA4 HA5 G1 G2 G3 HA6 HA7 HA8; do
     wait "$(cat "$OUT/$c.pid")" || FAILED="$FAILED $c"
     cat "$OUT/$c"
 done
