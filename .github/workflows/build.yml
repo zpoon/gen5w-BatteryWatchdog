@@ -16,9 +16,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # test builds: 0.5.0-dev.<run>; releases: plain VERSION. versionCode always increases.
+      # test builds: 0.5.0-dev.<run>; releases: plain VERSION. versionCode: tools/version.sh.
       BWD_VERSION_SUFFIX: ${{ github.event_name == 'release' && '' || format('-dev.{0}', github.run_number) }}
       BWD_VERSION_CODE: ${{ github.run_number }}
+      # a beta (GitHub pre-release) ranks below its release (tools/version.sh)
+      BWD_PRERELEASE: ${{ github.event_name == 'release' && github.event.release.prerelease && '1' || '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -104,6 +106,9 @@ jobs:
 
       - name: Test the battery report
         run: tests/test_report.sh
+
+      - name: Test the version numbers
+        run: tests/test_version.sh && tests/test_version.sh mksh
 
       - name: Test the install hook (preinstall)
         run: |
