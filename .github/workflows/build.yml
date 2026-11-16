@@ -105,6 +105,12 @@ jobs:
       - name: Test the battery report
         run: tests/test_report.sh
 
+      - name: Test the install hook (preinstall)
+        run: |
+          tests/test_preinstall.sh sh
+          tests/test_preinstall.sh mksh
+          tests/test_preinstall.sh /tmp/mksh-r43
+
       - name: Build NEMESIS package + USB bundle
         run: |
           cp app/batterywatchdog.apk package/app/batterywatchdog.apk
