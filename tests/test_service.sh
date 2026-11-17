@@ -18,8 +18,8 @@ setup() {
     cat > "$T/bin/service" <<EOT
 #!/bin/sh
 case "\$1" in
-check) echo "Service \$2: found"; exit 0;;
-list)  echo "17	tm_hscan_service: [\$(cat $T/iface)]"; exit 0;;
+check) if [ -e $T/svc_down ]; then echo "Service \$2: not found"; else echo "Service \$2: found"; fi; exit 0;;
+list)  [ -e $T/svc_down ] && exit 0; echo "17	tm_hscan_service: [\$(cat $T/iface)]"; exit 0;;
 esac
 echo "\$3" >> $T/calls
 case "\$3" in
@@ -36,7 +36,8 @@ esac
 EOT
     printf '#!/bin/sh\necho "$6" >> %s/toasts\n' "$T" > "$T/bin/am"
     printf '#!/bin/sh\ncase "$1" in power) cat %s/disp;; com.hkmc.micom.datc) cat %s/datc 2>/dev/null;; esac\n' "$T" "$T" > "$T/bin/dumpsys"
-    printf '#!/bin/sh\ncat %s/fw\n' "$T" > "$T/bin/getprop"
+    printf '#!/bin/sh\ncase "$1" in sys.boot_completed) cat %s/booted;; *) cat %s/fw;; esac\n' "$T" "$T" > "$T/bin/getprop"
+    echo 1 > "$T/booted"
     printf '#!/bin/sh\ncat %s/logcat 2>/dev/null\n' "$T" > "$T/bin/logcat"
     printf '10-29 18:42:18.630 I/ECO( 548): {"speed":0,"outTemperature":12,"x":1}\n' > "$T/logcat"
     chmod +x "$T/bin/"*
@@ -164,6 +165,17 @@ t_N() {
     rm -rf "$T"; echo "  N temperature kept between log lines: ok"
 }
 
+# W: started early in the boot (telematics not registered, Android not booted): waits, then verifies
+t_W() {
+    T=$(mktemp -d); setup "$T"; : > "$T/svc_down"; echo 0 > "$T/booted"
+    ( sleep 3; rm -f "$T/svc_down"; sleep 2; echo 1 > "$T/booted" ) &
+    run "$T" 3; wait
+    grep -q 'interface_mismatch' "$T/out" && fail "W: checked the interface before the service was up"
+    grep -q 'verify=known_firmware .*waited=[1-9]' "$T/out" || fail "W: should wait, then verify"
+    grep -q '^state=ok' "$T/state/status" || fail "W: status not ok"
+    rm -rf "$T"; echo "  W early boot: waits for telematics and boot: ok"
+}
+
 # O: a short stop (screen off < min_off_s) stays the same drive
 t_O() {
     T=$(mktemp -d); setup "$T"
@@ -217,12 +229,12 @@ t_M() {
 # spent in sleeps standing in for the car's screen going off and on. Output is
 # kept per case and printed in order.
 OUT=$(mktemp -d)
-for c in A A2 B C D E F N O Q R P M; do
+for c in A A2 B C D E F N O Q R P M W; do
     ( "t_$c" ) > "$OUT/$c" 2>&1 &
     echo $! > "$OUT/$c.pid"
 done
 FAILED=""
-for c in A A2 B C D E F N O Q R P M; do
+for c in A A2 B C D E F N O Q R P M W; do
     wait "$(cat "$OUT/$c.pid")" || FAILED="$FAILED $c"
     cat "$OUT/$c"
 done

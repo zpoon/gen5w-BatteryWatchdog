@@ -417,16 +417,21 @@ load_cfg
 LINES=$(cfg lines 0)
 log "v$VERSION start; enabled=$ENABLED interval=${INTERVAL}s poll=${POLL}s gap=${GAP}s decode=$DECODE clock_ok=$CLOCK_OK now=$(now) uptime=$(cat /proc/uptime 2>/dev/null)"
 
-# wait (bounded) for the telematics service
-i=0
-while [ "$i" -lt 120 ]; do
-    service check "$SVC" 2>/dev/null | grep -q found && break
+# wait (bounded) for Android to finish booting and the telematics service to register.
+# NEMESIS can start this service a few seconds into the boot (seen on an Ioniq 6 at
+# 3.6 s uptime), long before either. `service check` answers "Service X: not found"
+# too, so match ": found" exactly.
+i=0; WAIT_MAX=${BWD_WAIT_MAX:-300}
+while [ "$i" -lt "$WAIT_MAX" ]; do
+    case "$(service check "$SVC" 2>/dev/null)" in
+        *": found"*) [ "$(getprop sys.boot_completed 2>/dev/null)" = 1 ] && break ;;
+    esac
     sleep 2; i=$((i + 2))
 done
-[ "$i" -ge 120 ] && log "$SVC not registered after 120s; continuing anyway"
+[ "$i" -ge "$WAIT_MAX" ] && log "Android or $SVC not up after ${WAIT_MAX}s; continuing anyway"
 
 verify
-log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH sensor=$TX_SNS_STATE/$TX_SNS_INVALID/$TX_SNS_ERROR aux=$TX_AUX chg=$TX_CHG"
+log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH sensor=$TX_SNS_STATE/$TX_SNS_INVALID/$TX_SNS_ERROR aux=$TX_AUX chg=$TX_CHG waited=${i}s uptime=$(cat /proc/uptime 2>/dev/null)"
 
 DISP=$(display_state)
 PREV_DISP=$DISP
@@ -450,8 +455,13 @@ while :; do
         LOOPS=$((LOOPS + 1))
         [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
         if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        _was=$VERIFY_WHY
         verify
-        [ "$VERIFIED" = 1 ] && { log "verified: $VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"; NEED_SESSION=verified; }
+        if [ "$VERIFIED" = 1 ]; then
+            log "verified: $VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"; NEED_SESSION=verified
+        elif [ "$VERIFY_WHY" != "$_was" ]; then
+            log "still not verified: $VERIFY_WHY (was $_was)"
+        fi
         LAST_TICK=$(now); continue
     fi
 
