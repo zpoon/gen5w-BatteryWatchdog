@@ -20,7 +20,7 @@ final class ShareZip {
     private ShareZip() {}
 
     /** files kept in a share zip; the rest of the state dir stays private */
-    static final String[] SHARE_FILES = { "log.old.csv", "log.csv", "sessions", "warnings", "interval_s", "warn_pct", "drop_pct" };
+    static final String[] SHARE_FILES = { "log.old.csv", "log.csv", "sessions", "warnings", "dips", "interval_s", "warn_pct", "drop_pct" };
     /** 1980-01-02 12:00 UTC: just after the earliest time a zip entry can hold, in any time zone */
     static final long FIXED_TIME = 315662400000L;
 
@@ -61,7 +61,7 @@ final class ShareZip {
                 String c = raw.get(name);
                 if (c == null) continue;
                 if (name.startsWith("log")) c = shiftLines(c, shift, ',');
-                else if (name.equals("sessions") || name.equals("warnings")) c = shiftLines(c, shift, ' ');
+                else if (name.equals("sessions") || name.equals("warnings") || name.equals("dips")) c = shiftLines(c, shift, ' ');
                 put(z, "raw/" + name, c);
             }
             put(z, "info.txt", "dates shifted back by an undisclosed number of whole weeks\n" + (info == null ? "" : info));

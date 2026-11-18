@@ -58,6 +58,21 @@ public class ReportTest {
         check(r.contains("12V battery low (57%)"), "warnings listed");
         check(!r.contains("−"), "plain ASCII minus (prints anywhere)");
 
+        // collapses: 85 -> 6 (one), 6 -> 6 (still low, not a new one), 85 -> 30 (55 pts: one)
+        List<long[]> c = new ArrayList<long[]>();
+        long t0 = mon;
+        c.add(new long[] { t0, t0 + 3600, 850, 850 });
+        c.add(new long[] { t0 + 86400, t0 + 86400 + 600, 60, 60 });
+        c.add(new long[] { t0 + 2 * 86400, t0 + 2 * 86400 + 3600, 60, 820 });
+        c.add(new long[] { t0 + 3 * 86400, t0 + 3 * 86400 + 3600, 850, 850 });
+        c.add(new long[] { t0 + 4 * 86400, t0 + 4 * 86400 + 3600, 300, 800 });
+        List<long[]> cs = Report.collapses(c);
+        check(cs.size() == 2 && cs.get(0)[2] == 60 && cs.get(1)[2] == 300, "collapses: 2 found: " + cs.size());
+        String rc = Report.build(c, "", 60, 15, 800, t0 + 4 * 86400 + 3600, -1, "eng.test", "0.8.0", t0 + 5 * 86400, ny);
+        check(rc.contains("Collapses while parked, last 30 days:   2  <- have the battery tested"), "collapse count with advice");
+        check(rc.contains("COLLAPSES WHILE PARKED") && rc.contains("85.0%    6.0%     6.0%"), "collapse listed with before/after/end");
+        check(!r.contains("COLLAPSES WHILE PARKED (newest"), "no collapse section when there are none");
+
         String empty = Report.build(new ArrayList<long[]>(), "", 60, 15, -1, 0, -1, "?", "0.7.0", mon, ny);
         check(empty.contains("No drives have been recorded yet.") && empty.contains("None."), "empty report");
 

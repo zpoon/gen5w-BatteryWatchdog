@@ -176,6 +176,25 @@ t_W() {
     rm -rf "$T"; echo "  W early boot: waits for telematics and boot: ok"
 }
 
+# X: the 12V collapses while parked, twice, and recovers in between (how a failing battery looked)
+t_X() {
+    T=$(mktemp -d); setup "$T"
+    off() { echo "mWakefulness=Asleep" > "$T/disp"; }
+    on()  { echo "mWakefulness=Awake" > "$T/disp"; }
+    (   sleep 3; off; sleep 3; echo 00000006 > "$T/socval"; on      # 83 -> 6: first collapse
+        sleep 3; echo 00000055 > "$T/socval"; sleep 2; off; sleep 3; on   # 85 -> 85: no collapse
+        sleep 3; off; sleep 3; echo 00000005 > "$T/socval"; on      # 85 -> 5: second
+        sleep 3; off; sleep 3; on                                   # 5 -> 5: still low, not a new one
+    ) &
+    run "$T" 40; wait
+    [ "$(wc -l < "$T/state/dips")" -eq 2 ] || fail "X: expected 2 collapses, got $(wc -l < "$T/state/dips")"
+    grep -q 'collapsed while parked to 6.0% (was 83.0%): a weak battery does this' "$T/toasts" || fail "X: first collapse warning"
+    grep -q 'collapsed while parked 2 times in 30 days, now 5.0% (was 85.0%): this often comes before it fails' "$T/toasts" || fail "X: repeat warning"
+    grep -q 'dropped .* pts while parked: 83.0% -> 6.0%' "$T/toasts" && fail "X: a collapse should replace the plain drop warning"
+    grep -q '^dips=2$' "$T/state/status" || fail "X: status dips=2"
+    rm -rf "$T"; echo "  X collapses while parked: warned, counted: ok"
+}
+
 # O: a short stop (screen off < min_off_s) stays the same drive
 t_O() {
     T=$(mktemp -d); setup "$T"
@@ -229,12 +248,12 @@ t_M() {
 # spent in sleeps standing in for the car's screen going off and on. Output is
 # kept per case and printed in order.
 OUT=$(mktemp -d)
-for c in A A2 B C D E F N O Q R P M W; do
+for c in A A2 B C D E F N O Q R P M W X; do
     ( "t_$c" ) > "$OUT/$c" 2>&1 &
     echo $! > "$OUT/$c.pid"
 done
 FAILED=""
-for c in A A2 B C D E F N O Q R P M W; do
+for c in A A2 B C D E F N O Q R P M W X; do
     wait "$(cat "$OUT/$c.pid")" || FAILED="$FAILED $c"
     cat "$OUT/$c"
 done

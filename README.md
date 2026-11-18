@@ -35,6 +35,11 @@ helps just as much.
   - it **dropped a lot while parked** (default: 15 points or more),
   - it **didn't recover during your last drive** (a drive of 20+ minutes that
     ended lower than it started).
+  - it **collapsed while parked**: fell below 20 %, or by 50 points or more.
+    A second collapse within 30 days gets a stronger warning to have the
+    battery tested. A failing 12V has shown up exactly like this: deep drops
+    while parked, each looking fine again after the next drive, in the weeks
+    before it died.
 - **Parked drain:** how long the car sat before this drive, how much the 12V
   changed in that time, and the rate per day.
 - **Context:** main battery charge and outside temperature, since cold weather
@@ -148,6 +153,9 @@ computer or phone. It has:
 - the latest 12V reading and HV battery health;
 - how many warnings there were and how many drives started below your
   warning level;
+- how many times the 12V collapsed while parked in the last 30 and 90 days,
+  and each collapse with the reading before, after, and at the end of that
+  drive;
 - the five lowest 12V starts, with dates;
 - week by week: drives, average and lowest start, parked drain per day, and
   how often the car recharged the 12V while parked;

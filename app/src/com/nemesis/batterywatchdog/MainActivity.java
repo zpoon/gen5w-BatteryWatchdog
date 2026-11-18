@@ -942,7 +942,7 @@ public class MainActivity extends Activity {
     // ---- export to USB ---------------------------------------------------------
     static final String[] USB_ROOTS = { "/storage/usb0", "/storage/usb1", "/storage/usb2",
             "/mnt/media_rw/usb0", "/mnt/media_rw/usb1" };
-    static final String[] STATE_FILES = { "log.csv", "log.old.csv", "sessions", "warnings", "status", "txn",
+    static final String[] STATE_FILES = { "log.csv", "log.old.csv", "sessions", "warnings", "dips", "status", "txn",
             "enabled", "warn_pct", "drop_pct", "interval_s", "toast_start", "decode", "scale_x10" };
 
     void exportToUsb() {
