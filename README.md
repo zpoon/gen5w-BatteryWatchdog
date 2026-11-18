@@ -350,6 +350,10 @@ so a reinstall picks them up again. Uninstalling also leaves a copy of the
 history (no settings) in `/data/local/tmp/battery.watchdog-history/` for
 **Import history**, e.g. in the HMG-API version.
 
+To remove everything, tap **Settings → Tools → Delete all data** first: it
+stops the monitor and deletes the history, settings, the firmware check and
+that copy. Then uninstall.
+
 ## Building from source
 
 Every push to `main` is built and tested by GitHub Actions

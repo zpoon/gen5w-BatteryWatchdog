@@ -268,6 +268,9 @@ public class MainActivity extends Activity {
         TextView clear = tool("Clear history…", new View.OnClickListener() { public void onClick(View v) { confirmClear(); } });
         clear.setTextColor(pal.red);
         tl.addView(clear);
+        TextView wipe = tool("Delete all data\u2026", new View.OnClickListener() { public void onClick(View v) { confirmDeleteAll(); } });
+        wipe.setTextColor(pal.red);
+        tl.addView(wipe);
         overrideBtn = tool("Unverified firmware: use built-in numbers…", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
         overrideBtn.setVisibility(View.GONE);
         tl.addView(overrideBtn);
@@ -1324,6 +1327,41 @@ public class MainActivity extends Activity {
         runRoot("rm -f " + STATE + "/log.csv " + STATE + "/log.old.csv " + STATE + "/sessions "
                 + STATE + "/warnings " + STATE + "/dips " + STATE + "/lines");
         toast("History cleared");
+        refreshData();
+    }
+
+    // Everything Battery Watchdog keeps on the head unit: history, settings, the saved
+    // firmware numbers, the monitor's own files and log, and the copy left for Import
+    // history. Uninstalling keeps them on purpose (a reinstall picks up where it left
+    // off, and NEMESIS runs the uninstall step on every update too), so this is how an
+    // owner removes it all. The monitor is stopped first so it writes nothing back.
+    void confirmDeleteAll() {
+        new AlertDialog.Builder(this).setTitle("Delete all data?")
+            .setMessage("This deletes everything Battery Watchdog keeps on this head unit: every reading, drive and "
+                + "warning, your settings, the firmware check, and the copy kept for Import history. "
+                + "It can't be undone. Export to USB first if you might want any of it.\n\n"
+                + "The monitor stops until the head unit restarts. Uninstall the package in NEMESIS Manager afterwards, "
+                + "or tap Restart monitor to start again from scratch.")
+            .setPositiveButton("Delete everything", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) { deleteAllData(); } })
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    void deleteAllData() {
+        // never a short or odd path in an rm -rf
+        if (!STATE.startsWith("/data/") || STATE.length() < 16 || STATE.contains("..")) { toast("Not deleted: unexpected folder " + STATE); return; }
+        String r = runRoot(NEM + " service stop " + SVC_ID + " >/dev/null 2>&1; "
+                + "rm -rf " + shq(STATE) + "/* " + shq(HANDOVER) + " 2>&1; "
+                + ": > " + SVC_LOG + " 2>/dev/null; "
+                + "ls -A " + shq(STATE) + " 2>/dev/null; [ -e " + shq(HANDOVER) + " ] && echo " + shq(HANDOVER)).trim();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
+        new AlertDialog.Builder(this).setTitle("Delete all data")
+            .setMessage(r.length() == 0
+                ? "Everything is deleted and the monitor is stopped until the head unit restarts. Uninstall Battery Watchdog in NEMESIS Manager to remove "
+                    + "the app too, or tap Restart monitor to start again with the default settings."
+                : "Some files couldn't be deleted:\n" + r)
+            .setPositiveButton("OK", null).show();
+        loadConfig();
         refreshData();
     }
 
