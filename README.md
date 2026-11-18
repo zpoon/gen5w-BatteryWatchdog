@@ -191,6 +191,22 @@ The export contains readings, settings and the firmware version. It has no
 location, VIN or account details, but the date and time of each reading show
 when the car was driven and parked.
 
+### Importing history
+
+**Settings → Tools → Import history** brings readings, drives, warnings and
+collapses over from another copy of Battery Watchdog, for example when moving to
+the HMG-API version or after a reset. It looks in:
+
+- the copy the NEMESIS version leaves when it's uninstalled (from 0.7.2 on, in
+  `/data/local/tmp/battery.watchdog-history/`: history only, no settings);
+- the NEMESIS version's own folder on this head unit, if this app can read it;
+- exports on a USB drive (`BatteryWatchdog-export-…` folders, newest first).
+
+The history is added in date order to what's already here, and nothing is
+counted twice, so importing the same export again changes nothing. Settings stay
+as they are. When the app starts with no history of its own and finds a copy on
+the head unit, it offers the import once.
+
 ### Share your data to improve the health checks
 
 The current warnings are simple thresholds. Better checks, such as how fast
@@ -330,7 +346,13 @@ In the NEMESIS manager, open **Packages**, select **Battery Watchdog**
 (`battery.watchdog`) and tap **Uninstall**. From a shell,
 `nemesis uninstall battery.watchdog` does the same. Settings and history are
 stored in `/data/nemesis/state/battery.watchdog/` and stay after uninstalling,
-so a reinstall picks them up again.
+so a reinstall picks them up again. Uninstalling also leaves a copy of the
+history (no settings) in `/data/local/tmp/battery.watchdog-history/` for
+**Import history**, e.g. in the HMG-API version.
+
+To remove everything, tap **Settings → Tools → Delete all data** first: it
+stops the monitor and deletes the history, settings, the firmware check and
+that copy. Then uninstall.
 
 ## Building from source
 

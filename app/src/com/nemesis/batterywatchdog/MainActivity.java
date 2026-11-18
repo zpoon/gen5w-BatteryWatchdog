@@ -124,6 +124,7 @@ public class MainActivity extends Activity {
         refreshButtons();
         startVerification();
         handler.postDelayed(askShare, 2000);
+        handler.postDelayed(offerImport, 5000);
     }
 
     View buildHome() {
@@ -257,6 +258,7 @@ public class MainActivity extends Activity {
         tl.addView(tool("Warning history", new View.OnClickListener() { public void onClick(View v) { showWarnings(); } }));
         tl.addView(tool("Diagnostics", new View.OnClickListener() { public void onClick(View v) { showDiagnostics(); } }));
         tl.addView(tool("Export to USB", new View.OnClickListener() { public void onClick(View v) { exportToUsb(); } }));
+        tl.addView(tool("Import history\u2026", new View.OnClickListener() { public void onClick(View v) { importHistory(); } }));
         tl.addView(tool("Share data…", new View.OnClickListener() { public void onClick(View v) { showShareSteps(); } }));
         LinearLayout pair = row();
         pair.addView(tool("Restart monitor", new View.OnClickListener() { public void onClick(View v) { restartService(); } }), tileLp(false));
@@ -266,6 +268,9 @@ public class MainActivity extends Activity {
         TextView clear = tool("Clear history…", new View.OnClickListener() { public void onClick(View v) { confirmClear(); } });
         clear.setTextColor(pal.red);
         tl.addView(clear);
+        TextView wipe = tool("Delete all data\u2026", new View.OnClickListener() { public void onClick(View v) { confirmDeleteAll(); } });
+        wipe.setTextColor(pal.red);
+        tl.addView(wipe);
         overrideBtn = tool("Unverified firmware: use built-in numbers…", new View.OnClickListener() { public void onClick(View v) { confirmOverride(); } });
         overrideBtn.setVisibility(View.GONE);
         tl.addView(overrideBtn);
@@ -311,6 +316,156 @@ public class MainActivity extends Activity {
         if (r.length() > 0) { toast("Couldn't save: " + r); savedLabel.setTextColor(pal.red); savedLabel.setText("Not saved: " + r); }
         else { savedLabel.setTextColor(pal.muted); savedLabel.setText("Saved. Applies from the next drive."); }
     }
+
+    // ---- import history -----------------------------------------------------------
+    // History can come over from another copy of Battery Watchdog: the hand-over copy
+    // the NEMESIS package leaves when it's removed (package/scripts/preun.sh), the
+    // NEMESIS package's state folder (when this app runs as the HMG-API mod), or the
+    // raw/ folder of an export on a USB drive. Only history moves (Importer.FILES).
+    static final String NEM_STATE_DIR = "/data/nemesis/state/battery.watchdog";
+    static final String HANDOVER = Wipe.HANDOVER;
+    static final String ASKED_IMPORT = "import_asked";
+
+    static final class Source {
+        final String label; final Map<String, String> files; final int[] count; final long[] span;
+        Source(String label, Map<String, String> files) {
+            this.label = label; this.files = files; count = Importer.count(files); span = Importer.span(files);
+        }
+        boolean empty() { return count[0] + count[1] == 0; }
+        String summary() {
+            SimpleDateFormat d = new SimpleDateFormat("MMM d, yyyy", Locale.US);
+            return count[0] + " readings, " + count[1] + " drives"
+                + (span[0] > 0 ? ", " + d.format(new Date(span[0] * 1000)) + " to " + d.format(new Date(span[1] * 1000)) : "");
+        }
+    }
+
+    Map<String, String> readDir(String dir) {
+        Map<String, String> m = new HashMap<String, String>();
+        for (String f : Importer.FILES) {
+            String q = shq(dir + "/" + f);
+            String c = runRoot("[ -f " + q + " ] && cat " + q + " 2>/dev/null");
+            if (c.length() > 0 && !c.startsWith("ERR ")) m.put(f, c);
+        }
+        return m;
+    }
+
+    /** the places history can be imported from, those with something in them */
+    List<Source> findSources(boolean usb) {
+        List<Source> out = new ArrayList<Source>();
+        String[][] local = { { HANDOVER, "Copy left by the NEMESIS version when it was removed" },
+                             { NEM_STATE_DIR, "The NEMESIS version on this head unit" } };
+        for (String[] l : local) {
+            if (l[0].equals(STATE)) continue;
+            Source src = new Source(l[1], readDir(l[0]));
+            if (!src.empty()) out.add(src);
+        }
+        if (!usb) return out;
+        // exports: <drive>/BatteryWatchdog-export-<stamp>/raw, or inside the BatteryWatchdog folder
+        StringBuilder ls = new StringBuilder();
+        for (String root : USB_ROOTS) {
+            ls.append("ls -d ").append(root).append("/BatteryWatchdog-export-*/raw ")
+              .append(root).append("/BatteryWatchdog/BatteryWatchdog-export-*/raw 2>/dev/null; ");
+        }
+        List<String> dirs = new ArrayList<String>();
+        for (String l : runRoot(ls.toString()).split("\n")) if (l.trim().startsWith("/")) dirs.add(l.trim());
+        // newest first: the folder name carries the date and time
+        java.util.Collections.sort(dirs, new java.util.Comparator<String>() {
+            public int compare(String a, String b) { return exportName(b).compareTo(exportName(a)); } });
+        for (int i = 0; i < dirs.size() && i < 3; i++) {
+            Source src = new Source("USB export " + exportName(dirs.get(i)), readDir(dirs.get(i)));
+            if (!src.empty()) out.add(src);
+        }
+        return out;
+    }
+
+    static String exportName(String rawDir) {
+        String p = rawDir.endsWith("/raw") ? rawDir.substring(0, rawDir.length() - 4) : rawDir;
+        return p.substring(p.lastIndexOf('/') + 1);
+    }
+
+    void importHistory() {
+        toast("Looking for history to import\u2026");
+        new Thread(new Runnable() { public void run() {
+            final List<Source> found = findSources(true);
+            handler.post(new Runnable() { public void run() { chooseSource(found); } });
+        } }).start();
+    }
+
+    void chooseSource(final List<Source> found) {
+        if (found.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Import history")
+                .setMessage("No history found to import.\n\nThis looks for the copy the NEMESIS version of Battery Watchdog "
+                    + "leaves when it's removed, and for exports on a USB drive (BatteryWatchdog-export-\u2026 folders "
+                    + "made with Export to USB). Insert the drive with your export and try again.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        String[] items = new String[found.size()];
+        for (int i = 0; i < items.length; i++) items[i] = found.get(i).label + "\n" + found.get(i).summary();
+        new AlertDialog.Builder(this).setTitle("Import history from")
+            .setItems(items, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) { confirmImport(found.get(w)); } })
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    void confirmImport(final Source src) {
+        new AlertDialog.Builder(this).setTitle("Import history?")
+            .setMessage(src.label + ": " + src.summary() + ".\n\nThe readings, drives, warnings and collapses are "
+                + "added to the history here, in date order; anything already here stays, and nothing is counted twice. "
+                + "Settings aren't changed. The monitor restarts afterwards.")
+            .setPositiveButton("Import", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) { runImport(src); } })
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    void runImport(final Source src) {
+        toast("Importing\u2026");
+        new Thread(new Runnable() { public void run() {
+            Importer.Result r = Importer.merge(readDir(STATE), src.files, readInt("max_lines", 4000));
+            final StringBuilder msg = new StringBuilder();
+            if (r.nothingNew()) msg.append("Nothing new: everything in that history is already here.");
+            else {
+                String err = "";
+                for (Map.Entry<String, String> e : r.files.entrySet()) {
+                    String w = writeRoot(STATE + "/" + e.getKey(), e.getValue());
+                    if (w.length() > 0) err += e.getKey() + ": " + w + "\n";
+                }
+                writeRoot(STATE + "/lines", r.logLines + "\n");
+                msg.append(err.length() > 0 ? "Some files couldn't be written:\n" + err + "\n" : "")
+                   .append("Imported ").append(r.newReadings).append(" readings, ").append(r.newDrives).append(" drives, ")
+                   .append(r.newWarnings).append(" warnings and ").append(r.newCollapses).append(" collapses.");
+            }
+            final boolean changed = !r.nothingNew();
+            handler.post(new Runnable() { public void run() {
+                if (changed) restartService();
+                new AlertDialog.Builder(MainActivity.this).setTitle("Import history").setMessage(msg.toString())
+                    .setPositiveButton("OK", null).show();
+                refreshData();
+            } });
+        } }).start();
+    }
+
+    /** Once: when this copy has no history yet and another copy on the head unit does, offer to bring it over. */
+    final Runnable offerImport = new Runnable() { public void run() {
+        final SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (p.getBoolean(ASKED_IMPORT, false)) return;
+        new Thread(new Runnable() { public void run() {
+            if (Importer.count(readDir(STATE))[0] > 0) { p.edit().putBoolean(ASKED_IMPORT, true).apply(); return; }
+            final List<Source> found = findSources(false);
+            if (found.isEmpty()) return;
+            handler.post(new Runnable() { public void run() {
+                p.edit().putBoolean(ASKED_IMPORT, true).apply();
+                final Source src = found.get(0);
+                new AlertDialog.Builder(MainActivity.this).setTitle("Bring your history over?")
+                    .setMessage("Found history from the NEMESIS version of Battery Watchdog: " + src.summary()
+                        + ".\n\nImport it so the report, chart and warnings include those drives? "
+                        + "You can also do this later in Settings \u2192 Tools \u2192 Import history.")
+                    .setPositiveButton("Import", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface di, int w) { runImport(src); } })
+                    .setNegativeButton("Not now", null).show();
+            } });
+        } }).start();
+    } };
 
     void confirmClear() {
         new AlertDialog.Builder(this).setTitle("Clear history?")
@@ -756,28 +911,34 @@ public class MainActivity extends Activity {
         writeRoot(STATE + "/" + name, content);
     }
 
+    String txnSaveError = "";
+
+    /**
+     * Saves the numbers for the monitor (which reads STATE/txn once a minute while
+     * unverified). Written the same way as every other state file (writeRoot: staged and
+     * read back), not as one long chain of echo commands: on an Ioniq 6 that chain never
+     * produced the file, so the app showed "resolved" while the monitor stayed unverified.
+     */
     void saveTxn(String source) {
-        // plain echo: KitKat has no printf binary and mksh R43 has no printf builtin
-        String f = STATE + "/txn";
-        runRoot("mkdir -p " + STATE
-            + "; echo 'fw=" + fw + "' > " + f
-            + "; echo 'soc=" + txSoc + "' >> " + f
-            + "; echo 'hv=" + (txHv > 0 ? txHv : "") + "' >> " + f
-            + "; echo 'soh=" + (txSoh > 0 ? txSoh : "") + "' >> " + f
-            + extrasEcho(f, source)
-            + "; echo 'source=" + source + "' >> " + f);
+        StringBuilder t = new StringBuilder();
+        t.append("fw=").append(fw).append('\n');
+        t.append("soc=").append(txSoc).append('\n');
+        t.append("hv=").append(txHv > 0 ? String.valueOf(txHv) : "").append('\n');
+        t.append("soh=").append(txSoh > 0 ? String.valueOf(txSoh) : "").append('\n');
+        if (!"manual-override".equals(source)) {
+            for (String[] x : EXTRAS) {
+                Integer n = txExtra.get(x[0]);
+                t.append(x[0]).append('=').append(n == null ? "" : String.valueOf(n)).append('\n');
+            }
+            t.append("ext=1\n");
+        }
+        t.append("source=").append(source).append('\n');
+        runRoot("mkdir -p " + STATE);
+        String err = writeRoot(STATE + "/txn", t.toString());
+        String back = runRoot("cat " + STATE + "/txn 2>/dev/null");
+        txnSaveError = err.length() > 0 ? err : fw.equals(kv(back, "fw")) ? "" : "written, but it doesn't read back";
     }
 
-    /** the extra getters' lines for the txn file; none for an override (and ext=1: looked up) */
-    String extrasEcho(String f, String source) {
-        if ("manual-override".equals(source)) return "";
-        StringBuilder b = new StringBuilder();
-        for (String[] x : EXTRAS) {
-            Integer n = txExtra.get(x[0]);
-            b.append("; echo '").append(x[0]).append('=').append(n == null ? "" : String.valueOf(n)).append("' >> ").append(f);
-        }
-        return b.append("; echo 'ext=1' >> ").append(f).toString();
-    }
 
     void confirmOverride() {
         new AlertDialog.Builder(this).setTitle("Use built-in numbers on this firmware?")
@@ -859,6 +1020,9 @@ public class MainActivity extends Activity {
             .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
         d.append("logged too (by name): ").append(txExtra.isEmpty() ? "none" : txExtra.toString()).append("\n");
         d.append("file writes: ").append(lastWriteMethod.length() > 0 ? lastWriteMethod : "(none yet)").append("\n");
+        String txnNow = runRoot("cat " + STATE + "/txn 2>/dev/null").trim();
+        d.append("saved numbers (txn) for the monitor: ").append(txnNow.length() > 0 ? txnNow.replace("\n", " ") : "none")
+         .append(txnSaveError.length() > 0 ? "  (last save failed: " + txnSaveError + ")" : "").append("\n");
         d.append("telematics battery-related functions (names only, nothing is called):\n")
             .append(firstLines(batteryFunctions(), 40)).append("\n");
         d.append("lookup by name:\n").append(firstLines(runRoot("cat " + STATE + "/resolve.log 2>/dev/null"), 8)).append("\n");
@@ -1170,8 +1334,41 @@ public class MainActivity extends Activity {
 
     void clearHistory() {
         runRoot("rm -f " + STATE + "/log.csv " + STATE + "/log.old.csv " + STATE + "/sessions "
-                + STATE + "/warnings " + STATE + "/lines");
+                + STATE + "/warnings " + STATE + "/dips " + STATE + "/lines");
         toast("History cleared");
+        refreshData();
+    }
+
+    // Everything Battery Watchdog keeps on the head unit: history, settings, the saved
+    // firmware numbers, the monitor's own files and log, and the copy left for Import
+    // history. Uninstalling keeps them on purpose (a reinstall picks up where it left
+    // off, and NEMESIS runs the uninstall step on every update too), so this is how an
+    // owner removes it all. The monitor is stopped first so it writes nothing back.
+    void confirmDeleteAll() {
+        new AlertDialog.Builder(this).setTitle("Delete all data?")
+            .setMessage("This deletes everything Battery Watchdog keeps on this head unit: every reading, drive and "
+                + "warning, your settings, the firmware check, and the copy kept for Import history. "
+                + "It can't be undone. Export to USB first if you might want any of it.\n\n"
+                + "The monitor stops until the head unit restarts. Uninstall the package in NEMESIS Manager afterwards, "
+                + "or tap Restart monitor to start again from scratch.")
+            .setPositiveButton("Delete everything", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface di, int w) { deleteAllData(); } })
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    void deleteAllData() {
+        // only the two folders this app owns, checked again on the disk by Wipe.command
+        if (!Wipe.allowedState(STATE)) { toast("Not deleted: unexpected folder " + STATE); return; }
+        String r = runRoot(NEM + " service stop " + SVC_ID + " >/dev/null 2>&1; "
+                + Wipe.command(STATE, HANDOVER, SVC_LOG)).trim();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
+        new AlertDialog.Builder(this).setTitle("Delete all data")
+            .setMessage(r.length() == 0
+                ? "Everything is deleted and the monitor is stopped until the head unit restarts. Uninstall Battery Watchdog in NEMESIS Manager to remove "
+                    + "the app too, or tap Restart monitor to start again with the default settings."
+                : "Some files couldn't be deleted:\n" + r)
+            .setPositiveButton("OK", null).show();
+        loadConfig();
         refreshData();
     }
 
