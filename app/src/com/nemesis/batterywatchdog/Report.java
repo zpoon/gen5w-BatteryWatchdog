@@ -84,6 +84,22 @@ final class Report {
         return out;
     }
 
+    /** A collapse, as the service warns about it: the 12V fell below DIP_PCT while parked
+     *  (from at or above it), or by DIP_DROP points or more. Same defaults as watchdog.sh. */
+    static final int DIP_PCT = 20, DIP_DROP = 50;
+
+    /** Drives that started with a collapse: {start, previous end pct10 or -1, start pct10, end pct10}, oldest first. */
+    static List<long[]> collapses(List<long[]> drives) {
+        List<long[]> out = new ArrayList<long[]>();
+        for (int i = 0; i < drives.size(); i++) {
+            long[] d = drives.get(i);
+            long pe = i > 0 ? drives.get(i - 1)[3] : -1;
+            boolean dip = (d[2] < DIP_PCT * 10 && (pe < 0 || pe >= DIP_PCT * 10)) || (pe >= 0 && pe - d[2] >= DIP_DROP * 10);
+            if (dip) out.add(new long[] { d[0], pe, d[2], d[3] });
+        }
+        return out;
+    }
+
     static long weekStart(long epoch, TimeZone tz) {
         Calendar c = Calendar.getInstance(tz, Locale.US);
         c.setTimeInMillis(epoch * 1000);
@@ -105,6 +121,9 @@ final class Report {
         SimpleDateFormat day = fmt("MMM d, yyyy", tz), when = fmt("MMM d, yyyy h:mm a", tz), wk = fmt("MMM d", tz);
         int warn10 = warnPct * 10;
         List<Warning> warns = warnings(warningsFile);
+        List<long[]> dips = collapses(drives);
+        int dips30 = 0, dips90 = 0;
+        for (long[] c : dips) { if (c[0] >= now - 30 * 86400L) dips30++; if (c[0] >= now - 90 * 86400L) dips90++; }
         StringBuilder b = new StringBuilder();
 
         b.append("12V BATTERY REPORT\n");
@@ -131,6 +150,9 @@ final class Report {
             for (long[] d : drives) if (d[2] < warn10) below++;
             b.append("\nAT A GLANCE\n");
             b.append("  Warnings shown on the head unit:        ").append(warns.size()).append("\n");
+            b.append("  Collapses while parked, last 30 days:   ").append(dips30)
+             .append(dips30 >= 2 ? "  <- have the battery tested" : "").append("\n");
+            b.append("  Collapses while parked, last 90 days:   ").append(dips90).append("\n");
             b.append("  Drives that started below ").append(warnPct).append("%:        ")
              .append(below).append(" of ").append(drives.size()).append("\n");
 
@@ -157,6 +179,18 @@ final class Report {
             b.append("  ! = below the ").append(warnPct).append("% warning level\n");
         }
 
+        if (!dips.isEmpty()) {
+            b.append("\nCOLLAPSES WHILE PARKED (newest first)\n");
+            b.append("  When                   Before   After    End of that drive\n");
+            for (int i = dips.size() - 1; i >= 0; i--) {
+                long[] c = dips.get(i);
+                b.append("  ").append(pad(when.format(new Date(c[0] * 1000)), 23)).append(pad(c[1] < 0 ? "-" : pct(c[1]), 9))
+                 .append(pad(pct(c[2]), 9)).append(pct(c[3])).append("\n");
+            }
+            b.append("  A failing 12V battery has shown up as repeated collapses like these, each looking\n");
+            b.append("  fine again after the next drive. Two or more in a month: have it tested.\n");
+        }
+
         b.append("\nWARNINGS");
         if (warns.isEmpty()) b.append("\n  None.\n");
         else {
@@ -170,7 +204,8 @@ final class Report {
         b.append("  reading or a load test. \"Parked drain\" is how much that estimate fell while the car\n");
         b.append("  was off (stops of an hour or more), per day; \"recharged while parked\" counts stops\n");
         b.append("  where it rose instead, i.e. the car topped the 12V up. Warnings: below ").append(warnPct)
-         .append("% at the\n  start of a drive, or a drop of ").append(dropPct).append(" points or more while parked.\n");
+         .append("% at the\n  start of a drive, a drop of ").append(dropPct).append(" points or more while parked, or a collapse:\n")
+         .append("  below ").append(DIP_PCT).append("% after being above it, or a drop of ").append(DIP_DROP).append(" points or more.\n");
         return b.toString();
     }
 

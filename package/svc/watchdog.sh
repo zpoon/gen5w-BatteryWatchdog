@@ -268,6 +268,7 @@ write_status() {   # state
         echo "firmware=$FW"
         echo "verify=$VERIFY_WHY"
         echo "warn=$WARN_TEXT"
+        echo "dips=$DIPS_N"
     } > "$STATE/status" 2>/dev/null
 }
 
@@ -279,6 +280,9 @@ load_cfg() {
     SETTLE=$(cfg settle_s 30)
     WARN_PCT=$(cfg warn_pct 60)
     DROP_PCT=$(cfg drop_pct 15)
+    DIP_PCT=$(cfg dip_pct 20)       # a "collapse": falling below this while parked,
+    DIP_DROP=$(cfg dip_drop 50)     # or by this many points or more
+    DIP_DAYS=$(cfg dip_days 30)     # collapses counted over this many days
     DECODE=$(cfg decode 1)        # 0 auto, 1 int = probe-confirmed, 2 float
     SCALE=$(cfg scale_x10 10)     # % per raw unit, x10: 10 = 1 %, 5 = 0.5 %
     TOAST_START=$(cfg toast_start 0)
@@ -300,6 +304,25 @@ cur_interval() {
     fi
 }
 
+# ---- collapses over the last dip_days (DIPS_N); the file keeps the newest 100 ----
+dips_count() {
+    DIPS_N=0
+    [ -r "$STATE/dips" ] || return
+    _since=0
+    # with no real clock the times are uptimes: count them all
+    [ "$CLOCK_OK" = 1 ] && _since=$(( $(now) - DIP_DAYS * 86400 ))
+    _n=0; _keep=""
+    while read -r _t _a _b; do
+        case "$_t" in ''|*[!0-9]*) continue;; esac
+        _n=$((_n + 1))
+        [ "$_t" -ge "$_since" ] && DIPS_N=$((DIPS_N + 1))
+    done < "$STATE/dips"
+    if [ "$_n" -gt 100 ]; then
+        _skip=$((_n - 100)); _i=0
+        while read -r _l; do _i=$((_i + 1)); [ "$_i" -gt "$_skip" ] && echo "$_l"; done < "$STATE/dips" > "$STATE/dips.tmp"; mv "$STATE/dips.tmp" "$STATE/dips"
+    fi
+}
+
 # ---- a new drive: compare with the previous one and warn -----------------------
 session_start() {   # reason
     [ "$SETTLE" -gt 0 ] 2>/dev/null && sleep "$SETTLE"
@@ -317,8 +340,26 @@ session_start() {   # reason
     [ -r "$STATE/sess_start" ] && read -r PS_T PS_P < "$STATE/sess_start"
     [ -r "$STATE/last" ] && read -r PE_T PE_P < "$STATE/last"
 
-    [ "$S_PCT10" -lt $((WARN_PCT * 10)) ] && WARN_TEXT="12V battery low: $(fmt10 "$S_PCT10")%"
     PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
+    # A collapse: the 12V fell below dip_pct while parked (from at or above it), or by
+    # dip_drop points or more. A failing battery showed this several times in the weeks
+    # before it died, each time looking fine again after the next drive.
+    DIP=0; _pe=-1
+    [ -n "$PE_P" ] && [ "$PE_P" -ge 0 ] 2>/dev/null && _pe=$PE_P
+    if [ "$S_PCT10" -lt $((DIP_PCT * 10)) ] && { [ "$_pe" -lt 0 ] || [ "$_pe" -ge $((DIP_PCT * 10)) ]; }; then DIP=1; fi
+    [ "$_pe" -ge 0 ] && [ $((_pe - S_PCT10)) -ge $((DIP_DROP * 10)) ] && DIP=1
+    if [ "$DIP" = 1 ]; then
+        echo "$SESS_T $_pe $S_PCT10" >> "$STATE/dips"
+        dips_count
+        _was=""; [ "$_pe" -ge 0 ] && _was=" (was $(fmt10 "$_pe")%)"
+        if [ "$DIPS_N" -ge 2 ]; then
+            WARN_TEXT="12V collapsed while parked $DIPS_N times in $DIP_DAYS days, now $(fmt10 "$S_PCT10")%$_was: this often comes before it fails, have it tested soon"
+        else
+            WARN_TEXT="12V collapsed while parked to $(fmt10 "$S_PCT10")%$_was: a weak battery does this, have it tested"
+        fi
+    else
+        [ "$S_PCT10" -lt $((WARN_PCT * 10)) ] && WARN_TEXT="12V battery low: $(fmt10 "$S_PCT10")%"
+    fi
     if [ -n "$PE_P" ] && [ "$PE_P" -ge 0 ] 2>/dev/null; then
         DROP=$((PE_P - S_PCT10))
         # how long it sat since the last sample of the previous drive
@@ -327,7 +368,7 @@ session_start() {   # reason
             PARK_DROP10=$DROP
             [ "$PARK_MIN" -ge 60 ] && PARK_RATE10=$(( DROP * 1440 / PARK_MIN ))
         fi
-        if [ "$DROP" -ge $((DROP_PCT * 10)) ]; then
+        if [ "$DIP" != 1 ] && [ "$DROP" -ge $((DROP_PCT * 10)) ]; then
             W="12V dropped $(fmt10 "$DROP") pts while parked: $(fmt10 "$PE_P")% -> $(fmt10 "$S_PCT10")%"
             WARN_TEXT=${WARN_TEXT:+$WARN_TEXT; }$W
         fi
@@ -417,22 +458,28 @@ load_cfg
 LINES=$(cfg lines 0)
 log "v$VERSION start; enabled=$ENABLED interval=${INTERVAL}s poll=${POLL}s gap=${GAP}s decode=$DECODE clock_ok=$CLOCK_OK now=$(now) uptime=$(cat /proc/uptime 2>/dev/null)"
 
-# wait (bounded) for the telematics service
-i=0
-while [ "$i" -lt 120 ]; do
-    service check "$SVC" 2>/dev/null | grep -q found && break
+# wait (bounded) for Android to finish booting and the telematics service to register.
+# NEMESIS can start this service a few seconds into the boot (seen on an Ioniq 6 at
+# 3.6 s uptime), long before either. `service check` answers "Service X: not found"
+# too, so match ": found" exactly.
+i=0; WAIT_MAX=${BWD_WAIT_MAX:-300}
+while [ "$i" -lt "$WAIT_MAX" ]; do
+    case "$(service check "$SVC" 2>/dev/null)" in
+        *": found"*) [ "$(getprop sys.boot_completed 2>/dev/null)" = 1 ] && break ;;
+    esac
     sleep 2; i=$((i + 2))
 done
-[ "$i" -ge 120 ] && log "$SVC not registered after 120s; continuing anyway"
+[ "$i" -ge "$WAIT_MAX" ] && log "Android or $SVC not up after ${WAIT_MAX}s; continuing anyway"
 
 verify
-log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH sensor=$TX_SNS_STATE/$TX_SNS_INVALID/$TX_SNS_ERROR aux=$TX_AUX chg=$TX_CHG"
+log "firmware=$FW verify=$VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH sensor=$TX_SNS_STATE/$TX_SNS_INVALID/$TX_SNS_ERROR aux=$TX_AUX chg=$TX_CHG waited=${i}s uptime=$(cat /proc/uptime 2>/dev/null)"
 
 DISP=$(display_state)
 PREV_DISP=$DISP
 LAST_TICK=$(now)
 LAST_SAMPLE=0
 SESS_T=""; SESS_P=""; PREV_LINE=""; WARN_TEXT=""; S_PCT10=-1; S_RAW=""
+DIPS_N=0; dips_count
 PARK_MIN=""; PARK_DROP10=""; PARK_RATE10=""
 NEED_SESSION=service_start
 OFF_T=0
@@ -450,8 +497,13 @@ while :; do
         LOOPS=$((LOOPS + 1))
         [ -n "$BWD_TEST" ] && [ "$LOOPS" -ge "${BWD_TEST_LOOPS:-3}" ] && break
         if [ -n "$BWD_TEST" ]; then sleep 1; else sleep 60; fi
+        _was=$VERIFY_WHY
         verify
-        [ "$VERIFIED" = 1 ] && { log "verified: $VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"; NEED_SESSION=verified; }
+        if [ "$VERIFIED" = 1 ]; then
+            log "verified: $VERIFY_WHY soc=$TX_SOC hv=$TX_HVSOC soh=$TX_SOH"; NEED_SESSION=verified
+        elif [ "$VERIFY_WHY" != "$_was" ]; then
+            log "still not verified: $VERIFY_WHY (was $_was)"
+        fi
         LAST_TICK=$(now); continue
     fi
 
