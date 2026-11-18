@@ -911,28 +911,34 @@ public class MainActivity extends Activity {
         writeRoot(STATE + "/" + name, content);
     }
 
+    String txnSaveError = "";
+
+    /**
+     * Saves the numbers for the monitor (which reads STATE/txn once a minute while
+     * unverified). Written the same way as every other state file (writeRoot: staged and
+     * read back), not as one long chain of echo commands: on an Ioniq 6 that chain never
+     * produced the file, so the app showed "resolved" while the monitor stayed unverified.
+     */
     void saveTxn(String source) {
-        // plain echo: KitKat has no printf binary and mksh R43 has no printf builtin
-        String f = STATE + "/txn";
-        runRoot("mkdir -p " + STATE
-            + "; echo 'fw=" + fw + "' > " + f
-            + "; echo 'soc=" + txSoc + "' >> " + f
-            + "; echo 'hv=" + (txHv > 0 ? txHv : "") + "' >> " + f
-            + "; echo 'soh=" + (txSoh > 0 ? txSoh : "") + "' >> " + f
-            + extrasEcho(f, source)
-            + "; echo 'source=" + source + "' >> " + f);
+        StringBuilder t = new StringBuilder();
+        t.append("fw=").append(fw).append('\n');
+        t.append("soc=").append(txSoc).append('\n');
+        t.append("hv=").append(txHv > 0 ? String.valueOf(txHv) : "").append('\n');
+        t.append("soh=").append(txSoh > 0 ? String.valueOf(txSoh) : "").append('\n');
+        if (!"manual-override".equals(source)) {
+            for (String[] x : EXTRAS) {
+                Integer n = txExtra.get(x[0]);
+                t.append(x[0]).append('=').append(n == null ? "" : String.valueOf(n)).append('\n');
+            }
+            t.append("ext=1\n");
+        }
+        t.append("source=").append(source).append('\n');
+        runRoot("mkdir -p " + STATE);
+        String err = writeRoot(STATE + "/txn", t.toString());
+        String back = runRoot("cat " + STATE + "/txn 2>/dev/null");
+        txnSaveError = err.length() > 0 ? err : fw.equals(kv(back, "fw")) ? "" : "written, but it doesn't read back";
     }
 
-    /** the extra getters' lines for the txn file; none for an override (and ext=1: looked up) */
-    String extrasEcho(String f, String source) {
-        if ("manual-override".equals(source)) return "";
-        StringBuilder b = new StringBuilder();
-        for (String[] x : EXTRAS) {
-            Integer n = txExtra.get(x[0]);
-            b.append("; echo '").append(x[0]).append('=').append(n == null ? "" : String.valueOf(n)).append("' >> ").append(f);
-        }
-        return b.append("; echo 'ext=1' >> ").append(f).toString();
-    }
 
     void confirmOverride() {
         new AlertDialog.Builder(this).setTitle("Use built-in numbers on this firmware?")
@@ -1014,6 +1020,9 @@ public class MainActivity extends Activity {
             .append("  soc=").append(txSoc).append(" hv=").append(txHv).append(" soh=").append(txSoh).append("\n");
         d.append("logged too (by name): ").append(txExtra.isEmpty() ? "none" : txExtra.toString()).append("\n");
         d.append("file writes: ").append(lastWriteMethod.length() > 0 ? lastWriteMethod : "(none yet)").append("\n");
+        String txnNow = runRoot("cat " + STATE + "/txn 2>/dev/null").trim();
+        d.append("saved numbers (txn) for the monitor: ").append(txnNow.length() > 0 ? txnNow.replace("\n", " ") : "none")
+         .append(txnSaveError.length() > 0 ? "  (last save failed: " + txnSaveError + ")" : "").append("\n");
         d.append("telematics battery-related functions (names only, nothing is called):\n")
             .append(firstLines(batteryFunctions(), 40)).append("\n");
         d.append("lookup by name:\n").append(firstLines(runRoot("cat " + STATE + "/resolve.log 2>/dev/null"), 8)).append("\n");
