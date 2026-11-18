@@ -11,6 +11,7 @@ models=any
 repository=https://github.com/zpoon/gen5w-BatteryWatchdog
 preinstall=scripts/pre.sh
 postinstall=scripts/post.sh
+preuninstall=scripts/preun.sh
 
 [app.0]
 kind=apk

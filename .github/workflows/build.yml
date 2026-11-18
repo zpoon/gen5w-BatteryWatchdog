@@ -107,6 +107,15 @@ jobs:
       - name: Test the battery report
         run: tests/test_report.sh
 
+      - name: Test the history import
+        run: tests/test_import.sh
+
+      - name: Test the uninstall hook (history hand-over copy)
+        run: |
+          tests/test_preuninstall.sh sh
+          tests/test_preuninstall.sh mksh
+          tests/test_preuninstall.sh /tmp/mksh-r43
+
       - name: Test the version numbers
         run: tests/test_version.sh && tests/test_version.sh mksh
 
