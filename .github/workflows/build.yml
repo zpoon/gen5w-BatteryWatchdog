@@ -116,6 +116,12 @@ jobs:
           tests/test_preuninstall.sh mksh
           tests/test_preuninstall.sh /tmp/mksh-r43
 
+      - name: Test Delete all data (only the app's own files)
+        run: |
+          tests/test_wipe.sh sh
+          tests/test_wipe.sh mksh
+          tests/test_wipe.sh /tmp/mksh-r43
+
       - name: Test the version numbers
         run: tests/test_version.sh && tests/test_version.sh mksh
 

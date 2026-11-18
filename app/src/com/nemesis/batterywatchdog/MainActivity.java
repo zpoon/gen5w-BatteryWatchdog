@@ -323,7 +323,7 @@ public class MainActivity extends Activity {
     // NEMESIS package's state folder (when this app runs as the HMG-API mod), or the
     // raw/ folder of an export on a USB drive. Only history moves (Importer.FILES).
     static final String NEM_STATE_DIR = "/data/nemesis/state/battery.watchdog";
-    static final String HANDOVER = "/data/local/tmp/battery.watchdog-history";
+    static final String HANDOVER = Wipe.HANDOVER;
     static final String ASKED_IMPORT = "import_asked";
 
     static final class Source {
@@ -1348,12 +1348,10 @@ public class MainActivity extends Activity {
     }
 
     void deleteAllData() {
-        // never a short or odd path in an rm -rf
-        if (!STATE.startsWith("/data/") || STATE.length() < 16 || STATE.contains("..")) { toast("Not deleted: unexpected folder " + STATE); return; }
+        // only the two folders this app owns, checked again on the disk by Wipe.command
+        if (!Wipe.allowedState(STATE)) { toast("Not deleted: unexpected folder " + STATE); return; }
         String r = runRoot(NEM + " service stop " + SVC_ID + " >/dev/null 2>&1; "
-                + "rm -rf " + shq(STATE) + "/* " + shq(HANDOVER) + " 2>&1; "
-                + ": > " + SVC_LOG + " 2>/dev/null; "
-                + "ls -A " + shq(STATE) + " 2>/dev/null; [ -e " + shq(HANDOVER) + " ] && echo " + shq(HANDOVER)).trim();
+                + Wipe.command(STATE, HANDOVER, SVC_LOG)).trim();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
         new AlertDialog.Builder(this).setTitle("Delete all data")
             .setMessage(r.length() == 0
