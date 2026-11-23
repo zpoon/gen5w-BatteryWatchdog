@@ -213,7 +213,7 @@ For maintainers, adding a build:
    compatibility table, push, and publish a release (the `VERSION` file sets
    the version). CI runs the service and resolver tests on every push.
 4. For a new firmware **release** (not just another car on one already
-   listed), add it to `os=` in `package/NEMESIS.data`, e.g. `*.260507,*.260903`.
+   listed), add it to `os=` in `package/NEMESIS.data`, e.g. `*.260507,*.260903,*.260206`.
    NEMESIS matches it against `ro.build.product` (case-sensitive, `*` and `?`
    wildcards) to colour the Package Store row: listed firmware shows as fully
    compatible, anything else as partial, with a warning but still installable.
