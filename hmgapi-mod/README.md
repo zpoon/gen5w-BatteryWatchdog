@@ -80,12 +80,14 @@ same signing key), so a head unit runs only one of them:
          test run; "Paused" says HMG-API has no 12V reading for this car yet
    - [x] Read sensor now, Restart monitor and Diagnostics go through `hmgapid`
          (`vehicle`, `service-restart watch`, `services`, `service-log watch`, `usb`)
-   - [x] Export tries HMG-API's `BatteryWatchdog` folder on a stick first, then the
-         drive's top level
-   - [ ] check on the car: whether an ordinary app may write to the stick at
-         all (Android 4.4 lets only system apps write to removable drives; the
-         NEMESIS version writes as root). If not, ask VysseCodes for a way to
-         copy into a mod's USB folder.
+   - [x] Export writes only into the `BatteryWatchdog` folder on a stick, and makes
+         that folder when the stick has none (HMG-API lists a mod's folder only
+         once it exists)
+   - [x] the app declares `WRITE_EXTERNAL_STORAGE`: without it, writes to the stick
+         failed on the car (the app has no root here). On these head units
+         `platform.xml` gives that permission the `media_rw` group, which USB
+         writes need
+   - [ ] check on the car that Export and Save to USB now write
    - [ ] check on the car: whether the service's toasts (`am broadcast`) and its
          screen fallback (`dumpsys power`) work as the app's user
    - [ ] later: react to `hmgapi.intent.action.USB_FOLDER` (offer Export when a

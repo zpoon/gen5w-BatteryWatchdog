@@ -4,6 +4,9 @@
     android:versionCode="1"
     android:versionName="0.5.0">
   <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="19" />
+  <!-- HMG-API mode writes to the USB drive as this app, not as root: on these head units
+       this permission gives the app the media_rw group (platform.xml), which USB writes need -->
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
   <application
       android:label="Battery Watchdog"
       android:icon="@drawable/ic_launcher"
