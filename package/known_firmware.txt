@@ -10,3 +10,5 @@ eng.vmadmin.20260903.161833  137  74  214  # Ioniq 5 (US) 260903: 2023 Limited A
 eng.vmadmin.20260507.095323  137  74  214  # Kia EV6 (US) 260507: 2023 GT-Line AWD (#4)
 eng.vmadmin.20260903.174430  137  74  214  # Ioniq 6 (US) 260903: 2024 SEL (CEEV.USA.0000.V016.010.260903)
 eng.vmadmin.20260507.105522  137  74  214  # Ioniq 6 (US) 260507: resolved by name on the car, readings confirmed (diagnostics, Nov 17)
+eng.vmadmin.20260902.180807  137  74  214  # Ioniq 5 (KR) 260902: 2022 Long Range (NEEV.KOR.0000.V039.001.260902), resolved by name, readings confirmed (#21)
+eng.vmadmin.20251120.170936  137  74  214  # Kia EV6 (US) 251120: 2023 Wind RWD (CVEV.USA.S5W_M.V014.011.251120), resolved by name, readings look right (#22)
